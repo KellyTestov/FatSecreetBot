@@ -1,0 +1,10 @@
+.env
+tokens.json
+data/
+exports_output/
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+logs/
+.claude/
