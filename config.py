@@ -55,6 +55,16 @@ BOT_TIMEZONE_NAME = os.getenv("BOT_TIMEZONE", "Europe/Moscow")
 BOT_TIMEZONE = ZoneInfo(BOT_TIMEZONE_NAME)
 
 
+def ensure_storage_dirs():
+    """Гарантирует наличие директорий для runtime-файлов."""
+    STORAGE_DIR.mkdir(parents=True, exist_ok=True)
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+ensure_storage_dirs()
+
+
 def load_settings() -> dict:
     """Загружает настройки пользователя из файла."""
     if not SETTINGS_FILE.exists():
