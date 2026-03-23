@@ -1,4 +1,5 @@
 import logging
+import json
 from datetime import date, datetime, timezone
 
 from google.oauth2.service_account import Credentials
@@ -40,6 +41,13 @@ def _raise_friendly_http_error(exc: HttpError):
 
 
 def _service():
+    if config.GOOGLE_SERVICE_ACCOUNT_JSON:
+        creds = Credentials.from_service_account_info(
+            json.loads(config.GOOGLE_SERVICE_ACCOUNT_JSON),
+            scopes=SCOPES,
+        )
+        return build("sheets", "v4", credentials=creds, cache_discovery=False)
+
     key_file = config.GOOGLE_SERVICE_ACCOUNT_FILE
     if not key_file.exists():
         raise GoogleSheetsConfigError(

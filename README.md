@@ -280,6 +280,70 @@ GOOGLE_SHEETS_SPREADSHEET_ID=1rHs0hcDdW5XnWrwIEecxaB4G8e1tqSdx2tLyXGAYaY0
 .\.venv\Scripts\python.exe check_google_sheets.py
 ```
 
+## Деплой на Railway
+
+Проект уже подготовлен под Railway:
+
+- есть [railway.json](./railway.json)
+- есть [`.env.example`](./.env.example)
+- есть `STORAGE_DIR` для постоянного хранилища
+- можно передать Google service account через `GOOGLE_SERVICE_ACCOUNT_JSON`
+
+### Что выбрать в Railway
+
+1. Создай новый проект
+2. Подключи GitHub-репозиторий
+3. Railway сам соберёт проект
+4. Start command уже задан: `python bot.py`
+
+### Что обязательно добавить в Variables
+
+- `FATSECRET_CONSUMER_KEY`
+- `FATSECRET_CONSUMER_SECRET`
+- `FATSECRET_CALLBACK=oob`
+- `TELEGRAM_BOT_TOKEN`
+- `TELEGRAM_ALLOWED_USER_ID`
+- `GOOGLE_SHEETS_SPREADSHEET_ID`
+- `GOOGLE_SHEETS_WORKSHEET=BotLogs`
+- `GOOGLE_STATUS_WORKSHEET=Status`
+- `BOT_TIMEZONE=Europe/Moscow`
+
+Также одно из двух:
+
+1. Либо:
+   `GOOGLE_SERVICE_ACCOUNT_JSON={...полный json...}`
+
+2. Либо:
+   `GOOGLE_SERVICE_ACCOUNT_FILE=/data/storage/data/google_service_account.json`
+
+### Что лучше примонтировать как Volume
+
+Создай Railway Volume и используй:
+
+```env
+STORAGE_DIR=/data/storage
+```
+
+Тогда там будут жить:
+- `tokens.json`
+- `settings.json`
+- `automation_state.json`
+- временные выгрузки
+
+Это важно, чтобы после рестарта Railway бот не терял:
+- авторизацию FatSecret
+- дату старта и цели
+- состояние автоматизации
+- дату следующей Тирзетты
+
+### Важное замечание
+
+Если Telegram API у тебя из региона ходит нестабильно, добавь:
+
+```env
+PROXY_URL=socks5://host:port
+```
+
 ## Все основные команды
 
 ### Основные

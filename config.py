@@ -35,17 +35,22 @@ FOOD_ENTRIES_URL = "https://platform.fatsecret.com/rest/food-entries/v1"
 # Примеры: socks5://127.0.0.1:1080  или  http://127.0.0.1:8080
 PROXY_URL = os.getenv("PROXY_URL") or None
 
+# --- Хранилище ---
+STORAGE_DIR = Path(os.getenv("STORAGE_DIR", "."))
+DATA_DIR = STORAGE_DIR / "data"
+
 # --- Пути к файлам ---
-TOKENS_FILE = Path("tokens.json")
-SETTINGS_FILE = Path("data/settings.json")
-EXPORTS_DIR = Path("exports_output")
+TOKENS_FILE = STORAGE_DIR / "tokens.json"
+SETTINGS_FILE = DATA_DIR / "settings.json"
+EXPORTS_DIR = STORAGE_DIR / "exports_output"
 GOOGLE_SERVICE_ACCOUNT_FILE = Path(
-    os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE", "data/google_service_account.json")
+    os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE", str(DATA_DIR / "google_service_account.json"))
 )
+GOOGLE_SERVICE_ACCOUNT_JSON = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
 GOOGLE_SHEETS_SPREADSHEET_ID = os.getenv("GOOGLE_SHEETS_SPREADSHEET_ID")
 GOOGLE_SHEETS_WORKSHEET = os.getenv("GOOGLE_SHEETS_WORKSHEET", "BotLogs")
 STATUS_WORKSHEET = os.getenv("GOOGLE_STATUS_WORKSHEET", "Status")
-AUTOMATION_STATE_FILE = Path("data/automation_state.json")
+AUTOMATION_STATE_FILE = DATA_DIR / "automation_state.json"
 BOT_TIMEZONE_NAME = os.getenv("BOT_TIMEZONE", "Europe/Moscow")
 BOT_TIMEZONE = ZoneInfo(BOT_TIMEZONE_NAME)
 
