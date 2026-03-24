@@ -424,6 +424,16 @@ def _zone_label(metric: str, value: float) -> str:
     return "красная"
 
 
+def _parse_float_or_none(raw_value: str) -> float | None:
+    cleaned = (raw_value or "").strip().replace(",", ".")
+    if not cleaned:
+        return None
+    try:
+        return float(cleaned)
+    except ValueError:
+        return None
+
+
 def _format_status_row(row_index: int):
     sheet_id = _status_sheet_id()
     source_row_index = max(1, row_index - 1)
@@ -657,3 +667,80 @@ def color_status_metric_zones(target_date: date) -> dict[str, str]:
         ", ".join(f"{header}={zone}" for header, zone in applied.items()),
     )
     return applied
+
+
+def color_status_metric_zones_all() -> dict[str, int]:
+    ensure_status_sheet()
+    values = _status_values()
+    if len(values) <= 1:
+        logger.info("Google Sheets: лист Status пуст, окрашивать нечего")
+        return {"rows_colored": 0, "cells_colored": 0}
+
+    header_map = _header_index_map()
+    required_headers = [
+        ("Белок (г)", "protein"),
+        ("Углеводы (г)", "carbs"),
+        ("Клетчатка (г)", "fiber"),
+        ("Жиры (г)", "fat"),
+    ]
+    missing = [header for header, _ in required_headers if header not in header_map]
+    if missing:
+        raise RuntimeError(f"В листе Status нет колонок: {', '.join(missing)}")
+
+    sheet_id = _status_sheet_id()
+    requests = []
+    rows_colored: set[int] = set()
+
+    for row_index, row in enumerate(values[1:], start=2):
+        row_has_color = False
+        for header, metric_key in required_headers:
+            col_idx = header_map[header]
+            raw_value = row[col_idx] if col_idx < len(row) else ""
+            metric_value = _parse_float_or_none(raw_value)
+            if metric_value is None:
+                continue
+
+            color = _zone_color(metric_key, metric_value)
+            requests.append(
+                {
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": sheet_id,
+                            "startRowIndex": row_index - 1,
+                            "endRowIndex": row_index,
+                            "startColumnIndex": col_idx,
+                            "endColumnIndex": col_idx + 1,
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "backgroundColor": color,
+                            }
+                        },
+                        "fields": "userEnteredFormat.backgroundColor",
+                    }
+                }
+            )
+            row_has_color = True
+
+        if row_has_color:
+            rows_colored.add(row_index)
+
+    if not requests:
+        logger.info("Google Sheets: не найдено числовых значений для массовой окраски зон")
+        return {"rows_colored": 0, "cells_colored": 0}
+
+    try:
+        _service().spreadsheets().batchUpdate(
+            spreadsheetId=_status_spreadsheet_id(),
+            body={"requests": requests},
+        ).execute()
+    except HttpError as exc:
+        _raise_friendly_http_error(exc)
+
+    result = {"rows_colored": len(rows_colored), "cells_colored": len(requests)}
+    logger.info(
+        "Google Sheets: массовая окраска зон завершена (строк=%s, ячеек=%s)",
+        result["rows_colored"],
+        result["cells_colored"],
+    )
+    return result

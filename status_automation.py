@@ -566,7 +566,14 @@ async def cmd_color_status_zones(update: Update, context: ContextTypes.DEFAULT_T
 
     try:
         if not context.args:
-            dates = [today - timedelta(days=1)]
+            await update.message.reply_text("Применяю цветовые зоны ко всем строкам листа Status...")
+            result = await asyncio.to_thread(google_sheets.color_status_metric_zones_all)
+            await update.message.reply_text(
+                "Готово.\n"
+                f"Строк обработано: {result['rows_colored']}\n"
+                f"Ячеек окрашено: {result['cells_colored']}"
+            )
+            return
         elif len(context.args) == 1:
             dates = [_parse_date_arg(context.args, today - timedelta(days=1))]
         else:
