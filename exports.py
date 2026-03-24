@@ -6,8 +6,8 @@ PDF: отчёт с таблицами, поддержка кириллицы ч�
 """
 import os
 import platform
-from datetime import date
 from pathlib import Path
+from datetime import date
 
 import config
 from analytics import period_summary, top_products, parse_entry, to_float
@@ -194,6 +194,32 @@ def _register_cyrillic_font():
     from reportlab.pdfbase import pdfmetrics
     from reportlab.pdfbase.ttfonts import TTFont
 
+    # 1) Явные пути через env (удобно для Railway/контейнеров)
+    env_regular = os.getenv("PDF_FONT_REGULAR")
+    env_bold = os.getenv("PDF_FONT_BOLD")
+    if env_regular and os.path.exists(env_regular):
+        pdfmetrics.registerFont(TTFont("CyrRegular", env_regular))
+        if env_bold and os.path.exists(env_bold):
+            pdfmetrics.registerFont(TTFont("CyrBold", env_bold))
+        else:
+            pdfmetrics.registerFont(TTFont("CyrBold", env_regular))
+        return "CyrRegular", "CyrBold"
+
+    # 2) Локальный fonts/ в репозитории (если захотим положить TTF рядом с кодом)
+    local_candidates = [
+        (Path("fonts/DejaVuSans.ttf"), Path("fonts/DejaVuSans-Bold.ttf")),
+        (Path("fonts/Arial.ttf"), Path("fonts/Arial-Bold.ttf")),
+    ]
+    for regular_path, bold_path in local_candidates:
+        if regular_path.exists():
+            pdfmetrics.registerFont(TTFont("CyrRegular", str(regular_path)))
+            if bold_path.exists():
+                pdfmetrics.registerFont(TTFont("CyrBold", str(bold_path)))
+            else:
+                pdfmetrics.registerFont(TTFont("CyrBold", str(regular_path)))
+            return "CyrRegular", "CyrBold"
+
+    # 3) Системные шрифты для разных ОС
     if platform.system() == "Windows":
         font_paths = [
             ("C:/Windows/Fonts/arial.ttf", "C:/Windows/Fonts/arialbd.ttf"),
@@ -203,6 +229,33 @@ def _register_cyrillic_font():
             if os.path.exists(regular) and os.path.exists(bold):
                 pdfmetrics.registerFont(TTFont("CyrRegular", regular))
                 pdfmetrics.registerFont(TTFont("CyrBold", bold))
+                return "CyrRegular", "CyrBold"
+    elif platform.system() == "Linux":
+        linux_paths = [
+            ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
+            ("/usr/share/fonts/dejavu/DejaVuSans.ttf", "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf"),
+            ("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf", "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"),
+        ]
+        for regular, bold in linux_paths:
+            if os.path.exists(regular):
+                pdfmetrics.registerFont(TTFont("CyrRegular", regular))
+                if os.path.exists(bold):
+                    pdfmetrics.registerFont(TTFont("CyrBold", bold))
+                else:
+                    pdfmetrics.registerFont(TTFont("CyrBold", regular))
+                return "CyrRegular", "CyrBold"
+    elif platform.system() == "Darwin":
+        mac_paths = [
+            ("/System/Library/Fonts/Supplemental/Arial Unicode.ttf", "/System/Library/Fonts/Supplemental/Arial Bold.ttf"),
+            ("/System/Library/Fonts/Supplemental/Arial.ttf", "/System/Library/Fonts/Supplemental/Arial Bold.ttf"),
+        ]
+        for regular, bold in mac_paths:
+            if os.path.exists(regular):
+                pdfmetrics.registerFont(TTFont("CyrRegular", regular))
+                if os.path.exists(bold):
+                    pdfmetrics.registerFont(TTFont("CyrBold", bold))
+                else:
+                    pdfmetrics.registerFont(TTFont("CyrBold", regular))
                 return "CyrRegular", "CyrBold"
 
     # Fallback: Helvetica (кириллица не отобразится, но PDF создастся)
