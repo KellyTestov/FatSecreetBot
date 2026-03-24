@@ -7,6 +7,7 @@ FatSecret OAuth 1.0 авторизация и запросы к API.
 import json
 import logging
 from datetime import date, timedelta
+from pathlib import Path
 from urllib.parse import parse_qs
 
 import requests
@@ -23,6 +24,37 @@ class TokenExpiredError(Exception):
     pass
 
 
+def _token_file_candidates() -> list[Path]:
+    """Возвращает список возможных путей токенов (новый + legacy) без дублей."""
+    candidates = [
+        config.TOKENS_FILE,                 # текущий путь
+        config.STORAGE_DIR / "tokens.json", # legacy путь
+        config.DATA_DIR / "tokens.json",    # путь внутри data
+        Path("tokens.json"),                # локальный legacy
+        Path("data") / "tokens.json",       # локальный legacy
+    ]
+    unique: list[Path] = []
+    seen = set()
+    for c in candidates:
+        r = c.resolve()
+        if r in seen:
+            continue
+        seen.add(r)
+        unique.append(c)
+    return unique
+
+
+def _write_tokens_to(path: Path, access_token: str, access_token_secret: str):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(
+            {"access_token": access_token, "access_token_secret": access_token_secret},
+            f,
+            ensure_ascii=False,
+            indent=2,
+        )
+
+
 def date_to_int(d: date) -> int:
     """Переводит дату в количество дней с 1970-01-01 (формат FatSecret)."""
     return (d - date(1970, 1, 1)).days
@@ -30,24 +62,48 @@ def date_to_int(d: date) -> int:
 
 def load_tokens() -> tuple[str | None, str | None]:
     """Загружает сохранённые токены. Возвращает (token, secret) или (None, None)."""
-    if not config.TOKENS_FILE.exists():
-        logger.info("FatSecret: файл токенов не найден")
-        return None, None
-    with open(config.TOKENS_FILE, "r", encoding="utf-8") as f:
-        data = json.load(f)
-    logger.info("FatSecret: токены загружены из файла")
-    return data.get("access_token"), data.get("access_token_secret")
+    for token_file in _token_file_candidates():
+        if not token_file.exists():
+            continue
+        try:
+            with open(token_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception as exc:
+            logger.warning(f"FatSecret: не удалось прочитать токены из {token_file}: {exc}")
+            continue
+
+        access_token = data.get("access_token")
+        access_secret = data.get("access_token_secret")
+        if not access_token or not access_secret:
+            continue
+
+        if token_file.resolve() != config.TOKENS_FILE.resolve():
+            try:
+                _write_tokens_to(config.TOKENS_FILE, access_token, access_secret)
+                logger.info(f"FatSecret: токены мигрированы в основной путь {config.TOKENS_FILE}")
+            except Exception as exc:
+                logger.warning(f"FatSecret: не удалось мигрировать токены в {config.TOKENS_FILE}: {exc}")
+
+        logger.info(f"FatSecret: токены загружены из {token_file}")
+        return access_token, access_secret
+
+    logger.info("FatSecret: файл токенов не найден")
+    return None, None
 
 
 def save_tokens(access_token: str, access_token_secret: str):
     """Сохраняет токены в файл."""
-    with open(config.TOKENS_FILE, "w", encoding="utf-8") as f:
-        json.dump(
-            {"access_token": access_token, "access_token_secret": access_token_secret},
-            f,
-            indent=2,
-        )
-    logger.info("FatSecret: токены сохранены в файл")
+    saved_paths = []
+    for token_file in _token_file_candidates():
+        try:
+            _write_tokens_to(token_file, access_token, access_token_secret)
+            saved_paths.append(str(token_file))
+        except Exception as exc:
+            logger.warning(f"FatSecret: не удалось сохранить токены в {token_file}: {exc}")
+    if saved_paths:
+        logger.info(f"FatSecret: токены сохранены ({', '.join(saved_paths)})")
+    else:
+        raise RuntimeError("Не удалось сохранить токены FatSecret ни в один путь хранения")
 
 
 def get_request_token() -> tuple[str, str, str]:

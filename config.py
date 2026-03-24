@@ -40,7 +40,7 @@ STORAGE_DIR = Path(os.getenv("STORAGE_DIR", "."))
 DATA_DIR = STORAGE_DIR / "data"
 
 # --- Пути к файлам ---
-TOKENS_FILE = STORAGE_DIR / "tokens.json"
+TOKENS_FILE = DATA_DIR / "tokens.json"
 SETTINGS_FILE = DATA_DIR / "settings.json"
 EXPORTS_DIR = STORAGE_DIR / "exports_output"
 GOOGLE_SERVICE_ACCOUNT_FILE = Path(
