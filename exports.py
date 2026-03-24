@@ -235,6 +235,7 @@ def _register_cyrillic_font():
             ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
             ("/usr/share/fonts/dejavu/DejaVuSans.ttf", "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf"),
             ("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf", "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"),
+            ("/nix/var/nix/profiles/default/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/nix/var/nix/profiles/default/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
         ]
         for regular, bold in linux_paths:
             if os.path.exists(regular):
@@ -244,6 +245,28 @@ def _register_cyrillic_font():
                 else:
                     pdfmetrics.registerFont(TTFont("CyrBold", regular))
                 return "CyrRegular", "CyrBold"
+
+        # Nix/Railway fallback: ищем DejaVu/Liberation в nix-store динамически.
+        nix_candidates = []
+        for pattern in (
+            "/nix/store/*dejavu*/share/fonts/**/DejaVuSans.ttf",
+            "/nix/store/*dejavu*/share/fonts/**/DejaVuSans-Bold.ttf",
+            "/nix/store/*liberation*/share/fonts/**/LiberationSans-Regular.ttf",
+            "/nix/store/*liberation*/share/fonts/**/LiberationSans-Bold.ttf",
+        ):
+            nix_candidates.extend(Path("/").glob(pattern.lstrip("/")))
+        regular = None
+        bold = None
+        for p in nix_candidates:
+            name = p.name.lower()
+            if "bold" in name and bold is None:
+                bold = str(p)
+            elif ("regular" in name or "dejavusans.ttf" == name) and regular is None:
+                regular = str(p)
+        if regular:
+            pdfmetrics.registerFont(TTFont("CyrRegular", regular))
+            pdfmetrics.registerFont(TTFont("CyrBold", bold or regular))
+            return "CyrRegular", "CyrBold"
     elif platform.system() == "Darwin":
         mac_paths = [
             ("/System/Library/Fonts/Supplemental/Arial Unicode.ttf", "/System/Library/Fonts/Supplemental/Arial Bold.ttf"),
@@ -258,8 +281,11 @@ def _register_cyrillic_font():
                     pdfmetrics.registerFont(TTFont("CyrBold", regular))
                 return "CyrRegular", "CyrBold"
 
-    # Fallback: Helvetica (кириллица не отобразится, но PDF создастся)
-    return "Helvetica", "Helvetica-Bold"
+    raise RuntimeError(
+        "Не найден TTF-шрифт с кириллицей для PDF. "
+        "Задай PDF_FONT_REGULAR и PDF_FONT_BOLD в переменных окружения "
+        "(например DejaVuSans.ttf / DejaVuSans-Bold.ttf)."
+    )
 
 
 def create_pdf(days_data: dict, start: date, end: date, goals: dict) -> Path:

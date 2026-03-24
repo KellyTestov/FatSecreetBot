@@ -36,7 +36,8 @@ FOOD_ENTRIES_URL = "https://platform.fatsecret.com/rest/food-entries/v1"
 PROXY_URL = os.getenv("PROXY_URL") or None
 
 # --- Хранилище ---
-STORAGE_DIR = Path(os.getenv("STORAGE_DIR", "."))
+_default_storage = "/data/storage" if Path("/data/storage").exists() else "."
+STORAGE_DIR = Path(os.getenv("STORAGE_DIR", _default_storage))
 DATA_DIR = STORAGE_DIR / "data"
 
 # --- Пути к файлам ---
@@ -65,28 +66,68 @@ def ensure_storage_dirs():
 ensure_storage_dirs()
 
 
+def _settings_file_candidates() -> list[Path]:
+    candidates = [
+        SETTINGS_FILE,                  # текущий путь
+        STORAGE_DIR / "settings.json",  # legacy путь
+        Path("settings.json"),          # локальный legacy
+        Path("data") / "settings.json", # локальный legacy
+    ]
+    unique: list[Path] = []
+    seen = set()
+    for c in candidates:
+        r = c.resolve()
+        if r in seen:
+            continue
+        seen.add(r)
+        unique.append(c)
+    return unique
+
+
 def load_settings() -> dict:
     """Загружает настройки пользователя из файла."""
-    if not SETTINGS_FILE.exists():
-        return {
-            "start_date": None,
-            "goals": {
-                "calories": None,
-                "protein": None,
-                "max_sugar": None,
-                "max_sodium": None,
-            },
-        }
-    with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
-        data = json.load(f)
+    default = {
+        "start_date": None,
+        "goals": {
+            "calories": None,
+            "protein": None,
+            "max_sugar": None,
+            "max_sodium": None,
+        },
+    }
+
+    data = None
+    used_path = None
+    for p in _settings_file_candidates():
+        if not p.exists():
+            continue
+        try:
+            with open(p, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            used_path = p
+            break
+        except Exception:
+            continue
+
+    if data is None:
+        return default
+
     # Гарантируем наличие всех ключей
     if "goals" not in data:
         data["goals"] = {"calories": None, "protein": None, "max_sugar": None, "max_sodium": None}
+    if "start_date" not in data:
+        data["start_date"] = None
+
+    # Миграция в основной путь хранения.
+    if used_path and used_path.resolve() != SETTINGS_FILE.resolve():
+        save_settings(data)
+
     return data
 
 
 def save_settings(settings: dict):
     """Сохраняет настройки пользователя в файл."""
-    SETTINGS_FILE.parent.mkdir(exist_ok=True)
-    with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
-        json.dump(settings, f, ensure_ascii=False, indent=2)
+    for p in _settings_file_candidates():
+        p.parent.mkdir(parents=True, exist_ok=True)
+        with open(p, "w", encoding="utf-8") as f:
+            json.dump(settings, f, ensure_ascii=False, indent=2)

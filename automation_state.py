@@ -1,5 +1,6 @@
 import json
 from datetime import date
+from pathlib import Path
 
 import config
 
@@ -20,21 +21,67 @@ def _default_state() -> dict:
 
 
 def load_state() -> dict:
-    if not config.AUTOMATION_STATE_FILE.exists():
-        return _default_state()
+    candidates = [
+        config.AUTOMATION_STATE_FILE,                    # текущий путь
+        config.STORAGE_DIR / "automation_state.json",    # legacy путь
+        Path("automation_state.json"),                   # локальный legacy
+        Path("data") / "automation_state.json",          # локальный legacy
+    ]
+    unique: list[Path] = []
+    seen = set()
+    for c in candidates:
+        r = c.resolve()
+        if r in seen:
+            continue
+        seen.add(r)
+        unique.append(c)
 
-    with open(config.AUTOMATION_STATE_FILE, "r", encoding="utf-8") as f:
-        state = json.load(f)
+    state = None
+    used_path = None
+    for p in unique:
+        if not p.exists():
+            continue
+        try:
+            with open(p, "r", encoding="utf-8") as f:
+                state = json.load(f)
+            used_path = p
+            break
+        except Exception:
+            continue
+
+    if state is None:
+        return _default_state()
 
     base = _default_state()
     base.update(state)
+
+    # Миграция в основной путь хранения.
+    if used_path and used_path.resolve() != config.AUTOMATION_STATE_FILE.resolve():
+        save_state(base)
+
     return base
 
 
 def save_state(state: dict):
-    config.AUTOMATION_STATE_FILE.parent.mkdir(exist_ok=True)
-    with open(config.AUTOMATION_STATE_FILE, "w", encoding="utf-8") as f:
-        json.dump(state, f, ensure_ascii=False, indent=2)
+    candidates = [
+        config.AUTOMATION_STATE_FILE,
+        config.STORAGE_DIR / "automation_state.json",
+        Path("automation_state.json"),
+        Path("data") / "automation_state.json",
+    ]
+    unique: list[Path] = []
+    seen = set()
+    for c in candidates:
+        r = c.resolve()
+        if r in seen:
+            continue
+        seen.add(r)
+        unique.append(c)
+
+    for p in unique:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        with open(p, "w", encoding="utf-8") as f:
+            json.dump(state, f, ensure_ascii=False, indent=2)
 
 
 def ensure_initialized(state: dict) -> dict:

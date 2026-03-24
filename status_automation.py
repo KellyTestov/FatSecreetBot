@@ -357,6 +357,13 @@ async def _build_and_send_weekly_report(bot, chat_id: int, week_num: int):
         raise RuntimeError("Не задана дата старта похудения. Укажи /set_start_date YYYY-MM-DD")
 
     start_date = date.fromisoformat(start_date_raw)
+    current_week = analytics.week_number(datetime.now(config.BOT_TIMEZONE).date(), start_date)
+    max_completed_week = current_week - 1
+    if max_completed_week < 1:
+        raise RuntimeError("Пока нет завершенной недели для weekly PDF.")
+    if week_num < 1 or week_num > max_completed_week:
+        raise RuntimeError(f"Неделя {week_num} недоступна. Доступны недели: 1-{max_completed_week}.")
+
     week_start, week_end = analytics.week_date_range(week_num, start_date)
 
     token, secret = fatsecret.load_tokens()
@@ -679,9 +686,18 @@ async def cmd_test_weekly_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
 
     start_date = date.fromisoformat(start_date_raw)
-    max_week = max(1, analytics.week_number(datetime.now(config.BOT_TIMEZONE).date(), start_date))
+    current_week = max(1, analytics.week_number(datetime.now(config.BOT_TIMEZONE).date(), start_date))
+    max_week = current_week - 1  # для отчета даем только завершенные недели
+    if max_week < 1:
+        await update.message.reply_text("Пока нет завершенной недели для отчета.")
+        return
     await update.message.reply_text(
-        "Выбери неделю похудения для weekly PDF:",
+        (
+            f"Старт похудения: {_date_label(start_date)}\n"
+            f"Текущая неделя: {current_week}\n"
+            f"Доступны отчеты по завершенным неделям: 1-{max_week}\n\n"
+            "Выбери неделю похудения для weekly PDF:"
+        ),
         reply_markup=_weekly_pdf_keyboard(max_week),
     )
 
