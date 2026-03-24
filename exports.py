@@ -207,6 +207,7 @@ def _register_cyrillic_font():
 
     # 2) Локальный fonts/ в репозитории (если захотим положить TTF рядом с кодом)
     local_candidates = [
+        (Path("fonts/NotoSans-Regular.ttf"), Path("fonts/NotoSans-Bold.ttf")),
         (Path("fonts/DejaVuSans.ttf"), Path("fonts/DejaVuSans-Bold.ttf")),
         (Path("fonts/Arial.ttf"), Path("fonts/Arial-Bold.ttf")),
     ]

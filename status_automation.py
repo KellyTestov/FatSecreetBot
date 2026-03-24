@@ -109,12 +109,16 @@ def _tirz_keyboard(target_date: date) -> InlineKeyboardMarkup:
     )
 
 
-def _weekly_pdf_keyboard(max_week: int) -> InlineKeyboardMarkup:
-    max_week = max(1, max_week)
-    start_week = max(1, max_week - 11)
+def _weekly_pdf_keyboard(weeks: list[int]) -> InlineKeyboardMarkup:
+    if not weeks:
+        return InlineKeyboardMarkup([])
+
+    weeks_sorted = sorted(set(weeks), reverse=True)
+    # Ограничим кнопки последними 12 неделями с данными, чтобы меню было компактным.
+    weeks_sorted = weeks_sorted[:12]
     rows = []
     row = []
-    for week in range(max_week, start_week - 1, -1):
+    for week in weeks_sorted:
         row.append(InlineKeyboardButton(f"Неделя {week}", callback_data=f"weeklypdf:week:{week}"))
         if len(row) == 3:
             rows.append(row)
@@ -686,19 +690,36 @@ async def cmd_test_weekly_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
 
     start_date = date.fromisoformat(start_date_raw)
-    current_week = max(1, analytics.week_number(datetime.now(config.BOT_TIMEZONE).date(), start_date))
-    max_week = current_week - 1  # для отчета даем только завершенные недели
-    if max_week < 1:
+    today = datetime.now(config.BOT_TIMEZONE).date()
+    current_week = max(1, analytics.week_number(today, start_date))
+    max_completed_week = current_week - 1  # для отчета даем только завершенные недели
+    if max_completed_week < 1:
         await update.message.reply_text("Пока нет завершенной недели для отчета.")
         return
+
+    # Показываем только недели, где в Status уже есть строки.
+    status_rows = await asyncio.to_thread(google_sheets.get_status_rows_between, start_date, today)
+    weeks_with_data = set()
+    for row in status_rows:
+        row_date_raw = row.get("_date")
+        if not row_date_raw:
+            continue
+        row_date = date.fromisoformat(row_date_raw)
+        week_num = analytics.week_number(row_date, start_date)
+        if 1 <= week_num <= max_completed_week:
+            weeks_with_data.add(week_num)
+
+    available_weeks = sorted(weeks_with_data) if weeks_with_data else list(range(1, max_completed_week + 1))
+    min_week = available_weeks[0]
+    max_week = available_weeks[-1]
     await update.message.reply_text(
         (
             f"Старт похудения: {_date_label(start_date)}\n"
             f"Текущая неделя: {current_week}\n"
-            f"Доступны отчеты по завершенным неделям: 1-{max_week}\n\n"
+            f"Доступны отчеты по завершенным неделям: {min_week}-{max_week}\n\n"
             "Выбери неделю похудения для weekly PDF:"
         ),
-        reply_markup=_weekly_pdf_keyboard(max_week),
+        reply_markup=_weekly_pdf_keyboard(available_weeks),
     )
 
 
