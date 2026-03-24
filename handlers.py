@@ -5,7 +5,7 @@ import asyncio
 import logging
 from datetime import date, datetime, timedelta
 
-from telegram import Update
+from telegram import KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes, ConversationHandler
 
@@ -17,6 +17,139 @@ import formatters
 import google_sheets
 
 logger = logging.getLogger(__name__)
+
+BTN_MAIN = "Основные"
+BTN_DEV = "Команды разработчика"
+BTN_BACK = "Назад"
+BTN_HELP = "Помощь"
+BTN_TODAY = "Сегодня"
+BTN_YESTERDAY = "Вчера"
+BTN_LAST7 = "Последние 7 дней"
+BTN_LAST30 = "Последние 30 дней"
+BTN_CURRENT_WEEK = "Текущая неделя"
+BTN_TOP_PRODUCTS = "Топ продуктов"
+BTN_SETTINGS = "Настройки"
+BTN_SET_GOALS = "Цели питания"
+BTN_SET_START_DATE = "Дата старта"
+BTN_AUTH = "Подключить FatSecret"
+BTN_COMPLEX = "Сложные команды"
+BTN_EXPORTS = "Экспорт"
+BTN_DAY = "Отчет за дату"
+BTN_PERIOD = "Отчет за период"
+BTN_WEEK = "Неделя похудения"
+BTN_COMPARE = "Сравнить периоды"
+BTN_EXPORT_EXCEL = "Экспорт Excel"
+BTN_EXPORT_PDF = "Экспорт PDF"
+BTN_SHEETS_TEST = "Проверить Sheets"
+BTN_TEST_STATUS_SYNC = "Тест Status sync"
+BTN_TEST_APPETITE = "Тест аппетита"
+BTN_TEST_WEIGHT = "Тест веса"
+BTN_TEST_TIRZ = "Тест Тирзетты"
+BTN_TEST_TRAINING = "Тест тренировки"
+BTN_TEST_POOL = "Тест бассейна"
+BTN_COLOR_ZONES = "Покрасить старые зоны"
+
+
+def _root_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        [
+            [KeyboardButton(BTN_MAIN), KeyboardButton(BTN_DEV)],
+            [KeyboardButton(BTN_HELP)],
+        ],
+        resize_keyboard=True,
+        input_field_placeholder="Выбери раздел",
+    )
+
+
+def _main_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        [
+            [KeyboardButton(BTN_TODAY), KeyboardButton(BTN_YESTERDAY)],
+            [KeyboardButton(BTN_LAST7), KeyboardButton(BTN_LAST30)],
+            [KeyboardButton(BTN_CURRENT_WEEK), KeyboardButton(BTN_TOP_PRODUCTS)],
+            [KeyboardButton(BTN_SETTINGS), KeyboardButton(BTN_SET_GOALS)],
+            [KeyboardButton(BTN_AUTH), KeyboardButton(BTN_COMPLEX)],
+            [KeyboardButton(BTN_EXPORTS), KeyboardButton(BTN_BACK)],
+        ],
+        resize_keyboard=True,
+        input_field_placeholder="Выбери основную команду",
+    )
+
+
+def _complex_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        [
+            [KeyboardButton(BTN_DAY), KeyboardButton(BTN_PERIOD)],
+            [KeyboardButton(BTN_WEEK), KeyboardButton(BTN_COMPARE)],
+            [KeyboardButton(BTN_SET_START_DATE), KeyboardButton(BTN_BACK)],
+        ],
+        resize_keyboard=True,
+        input_field_placeholder="Выбери сценарий",
+    )
+
+
+def _exports_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        [
+            [KeyboardButton(BTN_EXPORT_EXCEL), KeyboardButton(BTN_EXPORT_PDF)],
+            [KeyboardButton(BTN_BACK)],
+        ],
+        resize_keyboard=True,
+        input_field_placeholder="Выбери экспорт",
+    )
+
+
+def _dev_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        [
+            [KeyboardButton(BTN_SHEETS_TEST), KeyboardButton(BTN_TEST_STATUS_SYNC)],
+            [KeyboardButton(BTN_TEST_APPETITE), KeyboardButton(BTN_TEST_WEIGHT)],
+            [KeyboardButton(BTN_TEST_TIRZ), KeyboardButton(BTN_TEST_TRAINING)],
+            [KeyboardButton(BTN_TEST_POOL), KeyboardButton(BTN_COLOR_ZONES)],
+            [KeyboardButton(BTN_BACK)],
+        ],
+        resize_keyboard=True,
+        input_field_placeholder="Выбери команду разработчика",
+    )
+
+
+def _menu_text() -> str:
+    return (
+        "<b>Меню бота</b>\n\n"
+        f"• <b>{BTN_MAIN}</b> — питание, аналитика, настройки и экспорт\n"
+        f"• <b>{BTN_DEV}</b> — тесты автоматизации и Google Sheets\n\n"
+        "Сложные сценарии тоже доступны из кнопок: бот подскажет готовую команду и формат даты."
+    )
+
+
+def _main_section_text() -> str:
+    return (
+        "<b>Основные команды</b>\n\n"
+        f"• <b>{BTN_TODAY}</b> и <b>{BTN_YESTERDAY}</b> — быстрый отчет за день\n"
+        f"• <b>{BTN_LAST7}</b>, <b>{BTN_LAST30}</b>, <b>{BTN_CURRENT_WEEK}</b> — готовые периоды\n"
+        f"• <b>{BTN_TOP_PRODUCTS}</b> — лидеры по еде за последние 30 дней\n"
+        f"• <b>{BTN_SETTINGS}</b>, <b>{BTN_SET_GOALS}</b>, <b>{BTN_AUTH}</b> — настройка бота\n"
+        f"• <b>{BTN_COMPLEX}</b> и <b>{BTN_EXPORTS}</b> — подсказки по командам с датами"
+    )
+
+
+def _dev_section_text() -> str:
+    return (
+        "<b>Команды разработчика</b>\n\n"
+        f"• <b>{BTN_SHEETS_TEST}</b> — проверка подключения к Google Sheets\n"
+        f"• <b>{BTN_TEST_STATUS_SYNC}</b> — тест записи статуса за вчера\n"
+        f"• <b>{BTN_COLOR_ZONES}</b> — ретро-окраска старых строк Status\n"
+        f"• Остальные кнопки — тесты ежедневных и еженедельных автоматизаций"
+    )
+
+
+async def _reply_with_menu(update: Update, text: str, keyboard: ReplyKeyboardMarkup):
+    await update.effective_message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=keyboard)
+
+
+def _log_user_event(update: Update, action: str, details: str | None = None):
+    suffix = f": {details}" if details else ""
+    logger.info(f"{action} — {_who(update)}{suffix}")
 
 
 def _who(update: Update) -> str:
@@ -176,12 +309,13 @@ async def auth_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not check_access(update):
         return
+    _log_user_event(update, "/start")
     token, _ = fatsecret.load_tokens()
-    status = "Токены FatSecret: найдены" if token else "Токены FatSecret: не найдены — используй /auth"
+    status = "Токены FatSecret: найдены" if token else "Токены FatSecret: не найдены, нажми «Подключить FatSecret»"
     sheets_status = (
         "Google Sheets: настроен"
         if config.GOOGLE_SHEETS_SPREADSHEET_ID
-        else "Google Sheets: не настроен — добавь GOOGLE_SHEETS_SPREADSHEET_ID"
+        else "Google Sheets: не настроен, добавь GOOGLE_SHEETS_SPREADSHEET_ID"
     )
     automation_status = (
         "Автоматизация Status: активна"
@@ -190,59 +324,47 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(
         "<b>FatSecret Analytics Bot</b>\n\n"
-        "Личный бот для аналитики питания на основе FatSecret.\n\n"
+        "Бот собирает аналитику из FatSecret, пишет статус в Google Sheets и напоминает про ежедневные действия.\n\n"
         f"{status}\n"
         f"{sheets_status}\n"
         f"{automation_status}\n\n"
-        "/help — список всех команд",
+        "Выбери раздел кнопками ниже. Полный список slash-команд доступен в /help.",
         parse_mode=ParseMode.HTML,
+        reply_markup=_root_keyboard(),
     )
 
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not check_access(update):
         return
+    _log_user_event(update, "/help")
     text = (
         "<b>Команды бота</b>\n\n"
-        "<b>Авторизация:</b>\n"
-        "  /auth — авторизация в FatSecret\n\n"
-        "<b>Google Sheets:</b>\n"
-        "  /sheets_test — проверить доступ к Google Sheets\n\n"
-        "<b>Status Automation:</b>\n"
-        "  /test_status_sync [дата] — записать питание в лист Status\n"
-        "  /test_appetite_prompt [дата] — тест вопроса про аппетит\n"
-        "  /test_weight_prompt [дата] — тест вопроса про вес\n"
-        "  /test_tirz_prompt [дата] — тест вопроса про Тирзетту\n"
-        "  /test_training_prompt [дата] — тест зала и кардио\n"
-        "  /test_pool_prompt [дата] — тест бассейна\n\n"
-        "<b>День:</b>\n"
-        "  /today — сегодня\n"
-        "  /yesterday — вчера\n"
-        "  /day 2026-03-20 — конкретный день\n\n"
-        "<b>Периоды:</b>\n"
-        "  /period 2026-03-01 2026-03-20\n"
-        "  /last7 — последние 7 дней\n"
-        "  /last14 — последние 14 дней\n"
-        "  /last30 — последние 30 дней\n\n"
-        "<b>Недели похудения:</b>\n"
-        "  /week 1 — неделя 1 от даты старта\n"
-        "  /week 3 — неделя 3\n"
-        "  /current_week — текущая неделя\n\n"
-        "<b>Сравнение:</b>\n"
-        "  /compare 2026-03-01 2026-03-07 2026-03-08 2026-03-14\n\n"
-        "<b>Продукты:</b>\n"
-        "  /top_products — топ за 30 дней\n"
-        "  /top_products 2026-03-01 2026-03-20\n"
-        "  /top_products 2026-03-01 2026-03-20 protein\n\n"
-        "<b>Настройки:</b>\n"
-        "  /settings — текущие настройки\n"
-        "  /set_start_date 2026-02-26\n"
-        "  /set_goals — задать цели\n\n"
-        "<b>Экспорт:</b>\n"
-        "  /export_excel 2026-03-01 2026-03-20\n"
-        "  /export_pdf 2026-03-01 2026-03-20"
+        "<b>Быстрые кнопки:</b>\n"
+        f"• {BTN_MAIN} — основное меню\n"
+        f"• {BTN_DEV} — меню тестов и техкоманд\n\n"
+        "<b>Основные slash-команды:</b>\n"
+        "• /today — сегодня\n"
+        "• /yesterday — вчера\n"
+        "• /day 2026-03-20 — конкретный день\n"
+        "• /period 2026-03-01 2026-03-20 — период\n"
+        "• /last7, /last14, /last30 — готовые периоды\n"
+        "• /week 3, /current_week — недели похудения\n"
+        "• /compare start1 end1 start2 end2 — сравнение периодов\n"
+        "• /top_products [start end sort] — топ продуктов\n"
+        "• /settings, /set_start_date, /set_goals — настройки\n"
+        "• /export_excel start end, /export_pdf start end — экспорт\n\n"
+        "<b>Команды разработчика:</b>\n"
+        "• /sheets_test — проверка Google Sheets\n"
+        "• /test_status_sync [дата]\n"
+        "• /color_status_zones [дата] [дата]\n"
+        "• /test_appetite_prompt [дата]\n"
+        "• /test_weight_prompt [дата]\n"
+        "• /test_tirz_prompt [дата]\n"
+        "• /test_training_prompt [дата]\n"
+        "• /test_pool_prompt [дата]"
     )
-    await update.message.reply_text(text, parse_mode=ParseMode.HTML)
+    await update.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=_root_keyboard())
 
 
 # ============================================================
@@ -544,6 +666,7 @@ async def cmd_top_products(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not check_access(update):
         return
+    _log_user_event(update, "/settings")
     settings = config.load_settings()
     text = formatters.format_settings(settings)
     await update.message.reply_text(text, parse_mode=ParseMode.HTML)
@@ -552,6 +675,7 @@ async def cmd_settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_set_start_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not check_access(update):
         return
+    _log_user_event(update, "/set_start_date", " ".join(context.args or []))
     if not context.args:
         await update.message.reply_text(
             "Использование: /set_start_date YYYY-MM-DD\n"
@@ -582,6 +706,7 @@ async def cmd_set_start_date(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def cmd_set_goals(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not check_access(update):
         return ConversationHandler.END
+    _log_user_event(update, "/set_goals")
     settings = config.load_settings()
     cur = settings.get("goals", {}).get("calories", "не задано")
     await update.message.reply_text(
@@ -597,6 +722,7 @@ async def cmd_set_goals(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def goals_calories(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
+    logger.info(f"Цели питания: получен шаг по калориям от {_who(update)}: {text}")
     context.user_data["new_goals"] = {}
     if text != "-":
         try:
@@ -616,6 +742,7 @@ async def goals_calories(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def goals_protein(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
+    logger.info(f"Цели питания: получен шаг по белку от {_who(update)}: {text}")
     if text != "-":
         try:
             context.user_data["new_goals"]["protein"] = float(text)
@@ -634,6 +761,7 @@ async def goals_protein(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def goals_sugar(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
+    logger.info(f"Цели питания: получен шаг по сахару от {_who(update)}: {text}")
     if text != "-":
         try:
             context.user_data["new_goals"]["max_sugar"] = float(text)
@@ -652,6 +780,7 @@ async def goals_sugar(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def goals_sodium(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
+    logger.info(f"Цели питания: получен шаг по натрию от {_who(update)}: {text}")
     if text != "-":
         try:
             context.user_data["new_goals"]["max_sodium"] = float(text)
@@ -681,6 +810,7 @@ async def goals_sodium(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def goals_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.pop("new_goals", None)
+    _log_user_event(update, "/cancel", "диалог целей питания")
     await update.message.reply_text("Настройка целей отменена.")
     return ConversationHandler.END
 
@@ -693,7 +823,7 @@ async def cmd_sheets_test(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not check_access(update):
         return
 
-    logger.info(f"/sheets_test — {_who(update)}")
+    _log_user_event(update, "/sheets_test")
     await update.message.reply_text("Проверяю подключение к Google Sheets...")
 
     try:
@@ -721,6 +851,7 @@ async def cmd_sheets_test(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"ID таблицы: <code>{result['spreadsheet_id']}</code>",
         parse_mode=ParseMode.HTML,
     )
+    logger.info(f"Google Sheets: ручная проверка успешно завершена для {_who(update)}")
 
 
 # ============================================================
@@ -811,3 +942,158 @@ async def cmd_export_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"Ошибка создания PDF: {e}")
         await update.message.reply_text(f"Ошибка при создании PDF: {e}")
+
+
+async def cmd_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not check_access(update):
+        return
+    _log_user_event(update, "/menu")
+    await _reply_with_menu(update, _menu_text(), _root_keyboard())
+
+
+async def cmd_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not check_access(update):
+        return
+    _log_user_event(update, "/main_menu")
+    await _reply_with_menu(update, _main_section_text(), _main_keyboard())
+
+
+async def cmd_dev_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not check_access(update):
+        return
+    _log_user_event(update, "/dev_menu")
+    await _reply_with_menu(update, _dev_section_text(), _dev_keyboard())
+
+
+async def cmd_hide_keyboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not check_access(update):
+        return
+    _log_user_event(update, "/hide_keyboard")
+    await update.effective_message.reply_text(
+        "Клавиатура скрыта. Вернуть ее можно командами /start или /menu.",
+        reply_markup=ReplyKeyboardRemove(),
+    )
+
+
+async def handle_menu_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not check_access(update) or not update.message or not update.message.text:
+        return
+
+    from status_automation import (
+        cmd_color_status_zones,
+        cmd_test_appetite_prompt,
+        cmd_test_pool_prompt,
+        cmd_test_status_sync,
+        cmd_test_tirz_prompt,
+        cmd_test_training_prompt,
+        cmd_test_weight_prompt,
+    )
+
+    text = update.message.text.strip()
+    _log_user_event(update, "Кнопка меню", text)
+
+    direct_actions = {
+        BTN_TODAY: cmd_today,
+        BTN_YESTERDAY: cmd_yesterday,
+        BTN_LAST7: cmd_last7,
+        BTN_LAST30: cmd_last30,
+        BTN_CURRENT_WEEK: cmd_current_week,
+        BTN_TOP_PRODUCTS: cmd_top_products,
+        BTN_SETTINGS: cmd_settings,
+        BTN_SHEETS_TEST: cmd_sheets_test,
+        BTN_TEST_STATUS_SYNC: cmd_test_status_sync,
+        BTN_TEST_APPETITE: cmd_test_appetite_prompt,
+        BTN_TEST_WEIGHT: cmd_test_weight_prompt,
+        BTN_TEST_TIRZ: cmd_test_tirz_prompt,
+        BTN_TEST_TRAINING: cmd_test_training_prompt,
+        BTN_TEST_POOL: cmd_test_pool_prompt,
+        BTN_COLOR_ZONES: cmd_color_status_zones,
+        BTN_HELP: cmd_help,
+    }
+    if text in direct_actions:
+        await direct_actions[text](update, context)
+        return
+
+    if text == BTN_MAIN:
+        await _reply_with_menu(update, _main_section_text(), _main_keyboard())
+        return
+
+    if text == BTN_DEV:
+        await _reply_with_menu(update, _dev_section_text(), _dev_keyboard())
+        return
+
+    if text == BTN_COMPLEX:
+        await _reply_with_menu(
+            update,
+            (
+                "<b>Сложные команды</b>\n\n"
+                "Здесь собраны сценарии, где нужно указать даты или номер недели. "
+                "Нажми нужную кнопку, и бот подскажет готовый формат."
+            ),
+            _complex_keyboard(),
+        )
+        return
+
+    if text == BTN_AUTH:
+        await update.message.reply_text(
+            "<b>Подключение FatSecret</b>\n\nЗапусти команду:\n<code>/auth</code>",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+
+    if text == BTN_SET_GOALS:
+        await update.message.reply_text(
+            "<b>Цели питания</b>\n\nЗапусти команду:\n<code>/set_goals</code>",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+
+    if text == BTN_EXPORTS:
+        await _reply_with_menu(
+            update,
+            (
+                "<b>Экспорт</b>\n\n"
+                "Выбери формат. Для экспорта нужен диапазон дат, бот покажет готовый шаблон команды."
+            ),
+            _exports_keyboard(),
+        )
+        return
+
+    if text == BTN_BACK:
+        await _reply_with_menu(update, _menu_text(), _root_keyboard())
+        return
+
+    templates = {
+        BTN_DAY: (
+            "<b>Отчет за дату</b>\n\n"
+            "Команда:\n<code>/day 2026-03-20</code>\n\n"
+            "Можно использовать и формат <code>20.03.2026</code>."
+        ),
+        BTN_PERIOD: (
+            "<b>Отчет за период</b>\n\n"
+            "Команда:\n<code>/period 2026-03-01 2026-03-20</code>"
+        ),
+        BTN_WEEK: (
+            "<b>Неделя похудения</b>\n\n"
+            "Команда:\n<code>/week 4</code>\n\n"
+            "Текущая неделя:\n<code>/current_week</code>"
+        ),
+        BTN_COMPARE: (
+            "<b>Сравнение периодов</b>\n\n"
+            "Команда:\n<code>/compare 2026-03-01 2026-03-07 2026-03-08 2026-03-14</code>"
+        ),
+        BTN_SET_START_DATE: (
+            "<b>Дата старта похудения</b>\n\n"
+            "Команда:\n<code>/set_start_date 2026-02-26</code>"
+        ),
+        BTN_EXPORT_EXCEL: (
+            "<b>Экспорт в Excel</b>\n\n"
+            "Команда:\n<code>/export_excel 2026-03-01 2026-03-20</code>"
+        ),
+        BTN_EXPORT_PDF: (
+            "<b>Экспорт в PDF</b>\n\n"
+            "Команда:\n<code>/export_pdf 2026-03-01 2026-03-20</code>"
+        ),
+    }
+    if text in templates:
+        await update.message.reply_text(templates[text], parse_mode=ParseMode.HTML)

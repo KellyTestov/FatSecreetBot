@@ -31,9 +31,11 @@ def date_to_int(d: date) -> int:
 def load_tokens() -> tuple[str | None, str | None]:
     """Загружает сохранённые токены. Возвращает (token, secret) или (None, None)."""
     if not config.TOKENS_FILE.exists():
+        logger.info("FatSecret: файл токенов не найден")
         return None, None
     with open(config.TOKENS_FILE, "r", encoding="utf-8") as f:
         data = json.load(f)
+    logger.info("FatSecret: токены загружены из файла")
     return data.get("access_token"), data.get("access_token_secret")
 
 
@@ -45,6 +47,7 @@ def save_tokens(access_token: str, access_token_secret: str):
             f,
             indent=2,
         )
+    logger.info("FatSecret: токены сохранены в файл")
 
 
 def get_request_token() -> tuple[str, str, str]:
@@ -157,8 +160,10 @@ def get_entries_for_range(access_token: str, access_token_secret: str, start: da
     """
     result = {}
     current = start
+    logger.info(f"FatSecret: начинаю загрузку диапазона {start.strftime('%d.%m.%Y')} - {end.strftime('%d.%m.%Y')}")
     while current <= end:
         entries = get_entries_for_date(access_token, access_token_secret, current)
         result[current] = entries
         current += timedelta(days=1)
+    logger.info(f"FatSecret: диапазон {start.strftime('%d.%m.%Y')} - {end.strftime('%d.%m.%Y')} загружен")
     return result

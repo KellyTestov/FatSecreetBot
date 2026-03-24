@@ -173,6 +173,7 @@ def append_test_row(spreadsheet_id: str, sheet_title: str, actor: str) -> dict:
 
 
 def verify_connection(create_if_missing_id: bool = False, actor: str = "manual") -> dict:
+    logger.info(f"Google Sheets: проверка подключения, инициатор {actor}")
     spreadsheet_id = config.GOOGLE_SHEETS_SPREADSHEET_ID
     created_spreadsheet = False
 
@@ -189,6 +190,12 @@ def verify_connection(create_if_missing_id: bool = False, actor: str = "manual")
     spreadsheet_title = spreadsheet.get("properties", {}).get("title", "Untitled")
     worksheet_title = ensure_worksheet(spreadsheet_id, config.GOOGLE_SHEETS_WORKSHEET)
     append_result = append_test_row(spreadsheet_id, worksheet_title, actor)
+    logger.info(
+        "Google Sheets: подключение проверено успешно (%s / %s, диапазон %s)",
+        spreadsheet_title,
+        worksheet_title,
+        append_result.get("updates", {}).get("updatedRange"),
+    )
 
     return {
         "spreadsheet_id": spreadsheet_id,
@@ -215,6 +222,10 @@ STATUS_HEADERS = [
     "Бассейн",
     "Кардио",
 ]
+
+ZONE_GREEN = {"red": 0.82, "green": 0.93, "blue": 0.84}
+ZONE_YELLOW = {"red": 0.99, "green": 0.93, "blue": 0.67}
+ZONE_RED = {"red": 0.96, "green": 0.80, "blue": 0.80}
 
 
 def _status_spreadsheet_id() -> str:
@@ -304,6 +315,7 @@ def ensure_status_sheet():
     values = _status_values()
     if values:
         return
+    logger.info(f"Google Sheets: создаю заголовок листа Status в таблице {spreadsheet_id}")
 
     try:
         _service().spreadsheets().values().update(
@@ -352,6 +364,64 @@ def _header_index_map() -> dict[str, int]:
     for index, name in enumerate(header):
         mapping[name] = index
     return mapping
+
+
+def _status_metric_value(target_date: date, header: str) -> float | None:
+    row_index = _status_row_index(target_date)
+    if row_index == 0:
+        return None
+
+    row_values = _status_row_values(row_index, target_date)
+    header_map = _header_index_map()
+    raw_value = row_values[header_map[header]].strip()
+    if not raw_value:
+        return None
+
+    try:
+        return float(raw_value.replace(",", "."))
+    except ValueError:
+        return None
+
+
+def _zone_color(metric: str, value: float) -> dict[str, float]:
+    if metric == "protein":
+        if value < 100:
+            return ZONE_RED
+        if value < 120:
+            return ZONE_YELLOW
+        return ZONE_GREEN
+
+    if metric == "carbs":
+        if value < 90 or value > 210:
+            return ZONE_RED
+        if value <= 160:
+            return ZONE_GREEN
+        return ZONE_YELLOW
+
+    if metric == "fiber":
+        if value < 10:
+            return ZONE_RED
+        if value < 18:
+            return ZONE_YELLOW
+        return ZONE_GREEN
+
+    if metric == "fat":
+        if value < 40 or value > 80:
+            return ZONE_RED
+        if value <= 65:
+            return ZONE_GREEN
+        return ZONE_YELLOW
+
+    raise RuntimeError(f"Неизвестная метрика для зоны: {metric}")
+
+
+def _zone_label(metric: str, value: float) -> str:
+    color = _zone_color(metric, value)
+    if color == ZONE_GREEN:
+        return "зелёная"
+    if color == ZONE_YELLOW:
+        return "жёлтая"
+    return "красная"
 
 
 def _format_status_row(row_index: int):
@@ -428,6 +498,7 @@ def _format_status_row(row_index: int):
 
     try:
         if requests:
+            logger.info(f"Google Sheets: копирую оформление на строку Status #{row_index}")
             _service().spreadsheets().batchUpdate(
                 spreadsheetId=_status_spreadsheet_id(),
                 body={"requests": requests},
@@ -449,6 +520,14 @@ def upsert_status_row(target_date: date, updates: dict[str, str]) -> dict:
     else:
         row_values = _status_row_values(row_index, target_date)
 
+    logger.info(
+        "Google Sheets: обновляю лист Status за %s (строка %s, новая=%s, поля=%s)",
+        target_date.strftime("%d.%m.%Y"),
+        row_index,
+        "да" if is_new_row else "нет",
+        ", ".join(updates.keys()),
+    )
+
     header_map = _header_index_map()
     for header, value in updates.items():
         if header not in header_map:
@@ -456,7 +535,7 @@ def upsert_status_row(target_date: date, updates: dict[str, str]) -> dict:
         row_values[header_map[header]] = value
 
     try:
-        return (
+        result = (
             _service()
             .spreadsheets()
             .values()
@@ -468,6 +547,12 @@ def upsert_status_row(target_date: date, updates: dict[str, str]) -> dict:
             )
             .execute()
         )
+        logger.info(
+            "Google Sheets: строка Status за %s сохранена (%s)",
+            target_date.strftime("%d.%m.%Y"),
+            result.get("updatedRange"),
+        )
+        return result
     except HttpError as exc:
         _raise_friendly_http_error(exc)
 
@@ -507,3 +592,68 @@ def record_activity(target_date: date, *, gym: str | None = None, pool: str | No
     if cardio is not None:
         updates["Кардио"] = cardio
     return upsert_status_row(target_date, updates)
+
+
+def color_status_metric_zones(target_date: date) -> dict[str, str]:
+    row_index = _status_row_index(target_date)
+    if row_index == 0:
+        raise RuntimeError(f"Строка Status за {target_date.strftime('%d.%m.%Y')} не найдена")
+
+    sheet_id = _status_sheet_id()
+    header_map = _header_index_map()
+    metrics = [
+        ("Белок (г)", "protein"),
+        ("Углеводы (г)", "carbs"),
+        ("Клетчатка (г)", "fiber"),
+        ("Жиры (г)", "fat"),
+    ]
+
+    requests = []
+    applied: dict[str, str] = {}
+
+    for header, metric_key in metrics:
+        value = _status_metric_value(target_date, header)
+        if value is None:
+            continue
+
+        color = _zone_color(metric_key, value)
+        applied[header] = _zone_label(metric_key, value)
+        column_index = header_map[header]
+        requests.append(
+            {
+                "repeatCell": {
+                    "range": {
+                        "sheetId": sheet_id,
+                        "startRowIndex": row_index - 1,
+                        "endRowIndex": row_index,
+                        "startColumnIndex": column_index,
+                        "endColumnIndex": column_index + 1,
+                    },
+                    "cell": {
+                        "userEnteredFormat": {
+                            "backgroundColor": color,
+                        }
+                    },
+                    "fields": "userEnteredFormat.backgroundColor",
+                }
+            }
+        )
+
+    if not requests:
+        logger.info(f"Google Sheets: для строки Status за {target_date.strftime('%d.%m.%Y')} нет числовых значений для окраски")
+        return {}
+
+    try:
+        _service().spreadsheets().batchUpdate(
+            spreadsheetId=_status_spreadsheet_id(),
+            body={"requests": requests},
+        ).execute()
+    except HttpError as exc:
+        _raise_friendly_http_error(exc)
+
+    logger.info(
+        "Google Sheets: цветовые зоны для %s применены (%s)",
+        target_date.strftime("%d.%m.%Y"),
+        ", ".join(f"{header}={zone}" for header, zone in applied.items()),
+    )
+    return applied

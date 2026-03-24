@@ -18,7 +18,7 @@ LOGS_DIR = Path("logs")
 _LEVEL_NAMES = {
     logging.DEBUG:    "DEBUG",
     logging.INFO:     "INFO",
-    logging.WARNING:  "ATTENTION",
+    logging.WARNING:  "WARNING",
     logging.ERROR:    "ERROR",
     logging.CRITICAL: "CRITICAL",
 }
