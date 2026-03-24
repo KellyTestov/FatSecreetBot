@@ -48,6 +48,7 @@ BTN_TEST_TIRZ = "Тест Тирзетты"
 BTN_TEST_TRAINING = "Тест тренировки"
 BTN_TEST_POOL = "Тест бассейна"
 BTN_COLOR_ZONES = "Покрасить старые зоны"
+BTN_TEST_WEEKLY_PDF = "Тест weekly PDF"
 
 
 def _root_keyboard() -> ReplyKeyboardMarkup:
@@ -106,6 +107,7 @@ def _dev_keyboard() -> ReplyKeyboardMarkup:
             [KeyboardButton(BTN_TEST_APPETITE), KeyboardButton(BTN_TEST_WEIGHT)],
             [KeyboardButton(BTN_TEST_TIRZ), KeyboardButton(BTN_TEST_TRAINING)],
             [KeyboardButton(BTN_TEST_POOL), KeyboardButton(BTN_COLOR_ZONES)],
+            [KeyboardButton(BTN_TEST_WEEKLY_PDF)],
             [KeyboardButton(BTN_BACK)],
         ],
         resize_keyboard=True,
@@ -138,6 +140,7 @@ def _dev_section_text() -> str:
         "<b>Команды разработчика</b>\n\n"
         f"• <b>{BTN_SHEETS_TEST}</b> — проверка подключения к Google Sheets\n"
         f"• <b>{BTN_TEST_STATUS_SYNC}</b> — тест записи статуса за вчера\n"
+        f"• <b>{BTN_TEST_WEEKLY_PDF}</b> — выбор недели и генерация weekly PDF\n"
         f"• <b>{BTN_COLOR_ZONES}</b> — ретро-окраска старых строк Status\n"
         f"• Остальные кнопки — тесты ежедневных и еженедельных автоматизаций"
     )
@@ -357,6 +360,7 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "<b>Команды разработчика:</b>\n"
         "• /sheets_test — проверка Google Sheets\n"
         "• /test_status_sync [дата]\n"
+        "• /test_weekly_pdf\n"
         "• /color_status_zones [дата] [дата]\n"
         "• /test_appetite_prompt [дата]\n"
         "• /test_weight_prompt [дата]\n"
@@ -984,6 +988,7 @@ async def handle_menu_button(update: Update, context: ContextTypes.DEFAULT_TYPE)
         cmd_test_appetite_prompt,
         cmd_test_pool_prompt,
         cmd_test_status_sync,
+        cmd_test_weekly_pdf,
         cmd_test_tirz_prompt,
         cmd_test_training_prompt,
         cmd_test_weight_prompt,
@@ -1008,6 +1013,7 @@ async def handle_menu_button(update: Update, context: ContextTypes.DEFAULT_TYPE)
         BTN_TEST_TRAINING: cmd_test_training_prompt,
         BTN_TEST_POOL: cmd_test_pool_prompt,
         BTN_COLOR_ZONES: cmd_color_status_zones,
+        BTN_TEST_WEEKLY_PDF: cmd_test_weekly_pdf,
         BTN_HELP: cmd_help,
     }
     if text in direct_actions:

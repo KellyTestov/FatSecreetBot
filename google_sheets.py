@@ -444,6 +444,37 @@ def _parse_float_or_none(raw_value: str) -> float | None:
         return None
 
 
+def _parse_status_date_cell(cell: str, start: date, end: date) -> date | None:
+    raw = (cell or "").strip()
+    if not raw:
+        return None
+
+    for fmt in ("%d.%m.%Y", "%Y-%m-%d"):
+        try:
+            parsed = datetime.strptime(raw, fmt).date()
+            if start <= parsed <= end:
+                return parsed
+            return None
+        except ValueError:
+            pass
+
+    # Формат без года (например "24.03"): подбираем год, чтобы дата попала в диапазон.
+    try:
+        day = int(raw.split(".")[0])
+        month = int(raw.split(".")[1])
+    except (ValueError, IndexError):
+        return None
+
+    for year in {start.year - 1, start.year, end.year, end.year + 1}:
+        try:
+            candidate = date(year, month, day)
+        except ValueError:
+            continue
+        if start <= candidate <= end:
+            return candidate
+    return None
+
+
 def _format_status_row(row_index: int):
     sheet_id = _status_sheet_id()
     source_row_index = max(1, row_index - 1)
@@ -760,3 +791,26 @@ def color_status_metric_zones_all() -> dict[str, int]:
         result["cells_colored"],
     )
     return result
+
+
+def get_status_rows_between(start: date, end: date) -> list[dict]:
+    ensure_status_sheet()
+    values = _status_values()
+    if not values:
+        return []
+
+    header = values[0]
+    rows: list[dict] = []
+    for row in values[1:]:
+        date_cell = row[0] if row else ""
+        parsed_date = _parse_status_date_cell(date_cell, start, end)
+        if not parsed_date:
+            continue
+
+        row_dict: dict[str, str] = {"_date": parsed_date.isoformat()}
+        for idx, col_name in enumerate(header):
+            row_dict[col_name] = row[idx] if idx < len(row) else ""
+        rows.append(row_dict)
+
+    rows.sort(key=lambda item: item["_date"])
+    return rows

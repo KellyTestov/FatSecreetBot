@@ -15,6 +15,7 @@ from telegram.ext import (
 import analytics
 import automation_state
 import config
+import exports
 import fatsecret
 import google_sheets
 
@@ -53,6 +54,7 @@ MENU_BUTTON_TEXTS = {
     "Тест тренировки",
     "Тест бассейна",
     "Покрасить старые зоны",
+    "Тест weekly PDF",
 }
 
 
@@ -105,6 +107,21 @@ def _tirz_keyboard(target_date: date) -> InlineKeyboardMarkup:
             ]
         ]
     )
+
+
+def _weekly_pdf_keyboard(max_week: int) -> InlineKeyboardMarkup:
+    max_week = max(1, max_week)
+    start_week = max(1, max_week - 11)
+    rows = []
+    row = []
+    for week in range(max_week, start_week - 1, -1):
+        row.append(InlineKeyboardButton(f"Неделя {week}", callback_data=f"weeklypdf:week:{week}"))
+        if len(row) == 3:
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
+    return InlineKeyboardMarkup(rows)
 
 
 def _allowed_chat_id() -> int | None:
@@ -333,6 +350,79 @@ async def _send_post_appetite_followups(bot, chat_id: int, target_date: date):
         await send_pool_prompt_to_chat(bot, chat_id, target_date)
 
 
+async def _build_and_send_weekly_report(bot, chat_id: int, week_num: int):
+    settings = config.load_settings()
+    start_date_raw = settings.get("start_date")
+    if not start_date_raw:
+        raise RuntimeError("Не задана дата старта похудения. Укажи /set_start_date YYYY-MM-DD")
+
+    start_date = date.fromisoformat(start_date_raw)
+    week_start, week_end = analytics.week_date_range(week_num, start_date)
+
+    token, secret = fatsecret.load_tokens()
+    if not token or not secret:
+        raise RuntimeError("Нет токенов FatSecret. Выполни /auth")
+
+    days_data = await asyncio.to_thread(fatsecret.get_entries_for_range, token, secret, week_start, week_end)
+    status_rows = await asyncio.to_thread(google_sheets.get_status_rows_between, week_start, week_end)
+    goals = settings.get("goals", {})
+    filepath = await asyncio.to_thread(
+        exports.create_weekly_pdf_report,
+        week_num=week_num,
+        start=week_start,
+        end=week_end,
+        days_data=days_data,
+        status_rows=status_rows,
+        goals=goals,
+        start_date=start_date,
+    )
+
+    with open(filepath, "rb") as f:
+        await bot.send_document(
+            chat_id=chat_id,
+            document=f,
+            filename=filepath.name,
+            caption=f"Недельный отчет: неделя {week_num} ({_date_label(week_start)} - {_date_label(week_end)})",
+        )
+
+    logger.info(f"Weekly PDF: отправлен отчет за неделю {week_num} ({_date_label(week_start)}-{_date_label(week_end)})")
+
+
+async def job_weekly_pdf_report(context: ContextTypes.DEFAULT_TYPE):
+    chat_id = _allowed_chat_id()
+    if not chat_id:
+        return
+
+    settings = config.load_settings()
+    start_date_raw = settings.get("start_date")
+    if not start_date_raw:
+        return
+
+    today = datetime.now(config.BOT_TIMEZONE).date()
+    start_date = date.fromisoformat(start_date_raw)
+
+    if today <= start_date:
+        return
+    if not _week_boundary_day(today, start_date):
+        return
+
+    week_num = analytics.week_number(today, start_date) - 1
+    if week_num < 1:
+        return
+
+    state = _pending_state()
+    last_sent_week = state.get("last_weekly_pdf_week")
+    if last_sent_week == week_num:
+        return
+
+    try:
+        await _build_and_send_weekly_report(context.bot, chat_id, week_num)
+        state["last_weekly_pdf_week"] = week_num
+        _save_state(state)
+    except Exception as exc:
+        logger.error(f"Weekly PDF: ошибка отправки за неделю {week_num}: {exc}")
+
+
 async def handle_pending_text_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not _check_access(update) or not update.message or not update.message.text:
         return
@@ -470,6 +560,28 @@ async def handle_automation_callback(update: Update, context: ContextTypes.DEFAU
         await query.edit_message_text(
             f"Активность • {_date_label(target_date)}\n\nБассейн: {value}."
         )
+        return
+
+
+async def handle_weekly_pdf_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    if not query or not _check_access(update):
+        return
+    await query.answer()
+    parts = (query.data or "").split(":")
+    if len(parts) != 3 or parts[0] != "weeklypdf" or parts[1] != "week":
+        return
+
+    try:
+        week_num = int(parts[2])
+    except ValueError:
+        return
+
+    await query.edit_message_text(f"Генерирую weekly PDF за неделю {week_num}...")
+    try:
+        await _build_and_send_weekly_report(context.bot, query.message.chat_id, week_num)
+    except Exception as exc:
+        await context.bot.send_message(chat_id=query.message.chat_id, text=f"Ошибка weekly PDF: {exc}")
 
 
 async def cmd_test_status_sync(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -557,6 +669,23 @@ async def cmd_test_pool_prompt(update: Update, context: ContextTypes.DEFAULT_TYP
     await send_pool_prompt_to_chat(context.bot, update.effective_chat.id, target_date)
 
 
+async def cmd_test_weekly_pdf(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not _check_access(update):
+        return
+    settings = config.load_settings()
+    start_date_raw = settings.get("start_date")
+    if not start_date_raw:
+        await update.message.reply_text("Сначала укажи дату старта: /set_start_date YYYY-MM-DD")
+        return
+
+    start_date = date.fromisoformat(start_date_raw)
+    max_week = max(1, analytics.week_number(datetime.now(config.BOT_TIMEZONE).date(), start_date))
+    await update.message.reply_text(
+        "Выбери неделю похудения для weekly PDF:",
+        reply_markup=_weekly_pdf_keyboard(max_week),
+    )
+
+
 async def cmd_color_status_zones(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not _check_access(update):
         return
@@ -626,8 +755,10 @@ def register_automation_handlers(app):
     app.add_handler(CommandHandler("test_tirz_prompt", cmd_test_tirz_prompt))
     app.add_handler(CommandHandler("test_training_prompt", cmd_test_training_prompt))
     app.add_handler(CommandHandler("test_pool_prompt", cmd_test_pool_prompt))
+    app.add_handler(CommandHandler("test_weekly_pdf", cmd_test_weekly_pdf))
     app.add_handler(CommandHandler("color_status_zones", cmd_color_status_zones))
     app.add_handler(CallbackQueryHandler(handle_automation_callback, pattern=r"^(tirz|gym|cardio|pool):"))
+    app.add_handler(CallbackQueryHandler(handle_weekly_pdf_callback, pattern=r"^weeklypdf:week:"))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_pending_text_prompt))
 
 
@@ -655,6 +786,11 @@ def schedule_automation_jobs(app):
         job_weight_prompt,
         time=time(hour=9, minute=30, tzinfo=config.BOT_TIMEZONE),
         name="status_weight_prompt",
+    )
+    app.job_queue.run_daily(
+        job_weekly_pdf_report,
+        time=time(hour=9, minute=0, tzinfo=config.BOT_TIMEZONE),
+        name="status_weekly_pdf",
     )
     app.job_queue.run_daily(
         job_tirz_prompt,

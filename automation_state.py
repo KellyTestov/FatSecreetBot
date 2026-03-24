@@ -13,6 +13,8 @@ def _default_state() -> dict:
         "last_weight_prompt_date": None,
         "last_training_prompt_date": None,
         "last_pool_prompt_date": None,
+        "last_zone_coloring_date": None,
+        "last_weekly_pdf_week": None,
         "pending_text_prompts": [],
     }
 

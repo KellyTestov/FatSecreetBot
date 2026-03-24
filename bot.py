@@ -69,6 +69,7 @@ async def _post_init(app: Application):
                 BotCommand("dev_menu", "Команды разработчика"),
                 BotCommand("sheets_test", "Проверить Google Sheets"),
                 BotCommand("test_status_sync", "Тест записи Status"),
+                BotCommand("test_weekly_pdf", "Выбрать неделю и получить weekly PDF"),
                 BotCommand("color_status_zones", "Покрасить старые зоны"),
                 BotCommand("test_appetite_prompt", "Тест вопроса про аппетит"),
                 BotCommand("test_weight_prompt", "Тест вопроса про вес"),
