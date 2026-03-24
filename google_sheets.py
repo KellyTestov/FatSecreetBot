@@ -383,43 +383,53 @@ def _status_metric_value(target_date: date, header: str) -> float | None:
         return None
 
 
-def _zone_color(metric: str, value: float) -> dict[str, float]:
+def _metric_zone(metric: str, value: float) -> str:
     if metric == "protein":
         if value < 100:
-            return ZONE_RED
+            return "red"
         if value < 120:
-            return ZONE_YELLOW
-        return ZONE_GREEN
+            return "yellow"
+        return "green"
 
     if metric == "carbs":
         if value < 90 or value > 210:
-            return ZONE_RED
+            return "red"
         if value <= 160:
-            return ZONE_GREEN
-        return ZONE_YELLOW
+            return "green"
+        return "yellow"
 
     if metric == "fiber":
         if value < 10:
-            return ZONE_RED
+            return "red"
         if value < 18:
-            return ZONE_YELLOW
-        return ZONE_GREEN
+            return "yellow"
+        return "green"
 
     if metric == "fat":
         if value < 40 or value > 80:
-            return ZONE_RED
+            return "red"
         if value <= 65:
-            return ZONE_GREEN
-        return ZONE_YELLOW
+            return "green"
+        return "yellow"
 
     raise RuntimeError(f"Неизвестная метрика для зоны: {metric}")
 
 
+def _zone_color(metric: str, value: float) -> dict[str, float] | None:
+    zone = _metric_zone(metric, value)
+    if zone == "red":
+        return ZONE_RED
+    if zone == "yellow":
+        return ZONE_YELLOW
+    # Зеленую зону не красим: оставляем текущий фон ячейки без изменений.
+    return None
+
+
 def _zone_label(metric: str, value: float) -> str:
-    color = _zone_color(metric, value)
-    if color == ZONE_GREEN:
+    zone = _metric_zone(metric, value)
+    if zone == "green":
         return "зелёная"
-    if color == ZONE_YELLOW:
+    if zone == "yellow":
         return "жёлтая"
     return "красная"
 
@@ -627,6 +637,9 @@ def color_status_metric_zones(target_date: date) -> dict[str, str]:
             continue
 
         color = _zone_color(metric_key, value)
+        if color is None:
+            continue
+
         applied[header] = _zone_label(metric_key, value)
         column_index = header_map[header]
         requests.append(
@@ -701,6 +714,9 @@ def color_status_metric_zones_all() -> dict[str, int]:
                 continue
 
             color = _zone_color(metric_key, metric_value)
+            if color is None:
+                continue
+
             requests.append(
                 {
                     "repeatCell": {
