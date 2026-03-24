@@ -22,6 +22,38 @@ logger = logging.getLogger(__name__)
 
 TRAINING_WEEKDAYS = {1, 3, 5}  # Tue, Thu, Sat
 POOL_WEEKDAY = 6  # Sun
+MENU_BUTTON_TEXTS = {
+    "Основные",
+    "Команды разработчика",
+    "Назад",
+    "Помощь",
+    "Сегодня",
+    "Вчера",
+    "Последние 7 дней",
+    "Последние 30 дней",
+    "Текущая неделя",
+    "Топ продуктов",
+    "Настройки",
+    "Цели питания",
+    "Дата старта",
+    "Подключить FatSecret",
+    "Сложные команды",
+    "Экспорт",
+    "Отчет за дату",
+    "Отчет за период",
+    "Неделя похудения",
+    "Сравнить периоды",
+    "Экспорт Excel",
+    "Экспорт PDF",
+    "Проверить Sheets",
+    "Тест Status sync",
+    "Тест аппетита",
+    "Тест веса",
+    "Тест Тирзетты",
+    "Тест тренировки",
+    "Тест бассейна",
+    "Покрасить старые зоны",
+}
 
 
 def _check_access(update: Update) -> bool:
@@ -305,6 +337,10 @@ async def handle_pending_text_prompt(update: Update, context: ContextTypes.DEFAU
     if not _check_access(update) or not update.message or not update.message.text:
         return
 
+    # Служебные тексты reply-кнопок не должны попадать в поля аппетита/веса.
+    if update.message.text.strip() in MENU_BUTTON_TEXTS:
+        return
+
     reply_to_message_id = None
     if update.message.reply_to_message:
         reply_to_message_id = update.message.reply_to_message.message_id
@@ -343,6 +379,10 @@ async def handle_pending_text_prompt(update: Update, context: ContextTypes.DEFAU
                 f"Вес за {_date_label(target_date)} сохранён: {weight:.1f} кг."
             )
             raise ApplicationHandlerStop
+    except ApplicationHandlerStop:
+        # Служебный сигнал python-telegram-bot: прекращаем дальнейшие MessageHandler
+        # и не возвращаем prompt обратно в очередь.
+        raise
     except ValueError:
         state.setdefault("pending_text_prompts", []).append(prompt)
         _save_state(state)
