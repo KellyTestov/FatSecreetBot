@@ -628,8 +628,6 @@ def create_weekly_pdf_report(
         pie.height = 145
         pie.data = [zone_counts["red"], zone_counts["yellow"], zone_counts["green"]]
         pie.labels = ["", "", ""]
-        pie.fontName = font_regular
-        pie.fontSize = 8
         pie.labels = [f"Красн. {zone_counts['red']}", f"Жёлт. {zone_counts['yellow']}", f"Зел. {zone_counts['green']}"]
         pie.slices[0].fillColor = colors.HexColor("#E76F51")
         pie.slices[1].fillColor = colors.HexColor("#E9C46A")
@@ -654,8 +652,6 @@ def create_weekly_pdf_report(
         no_total = max(0, summary["total_days"] * 3 - yes_total)
         pie.data = [yes_total, no_total]
         pie.labels = ["", ""]
-        pie.fontName = font_regular
-        pie.fontSize = 8
         pie.labels = [f"Сделано {yes_total}", f"Пропуск {no_total}"]
         pie.slices[0].fillColor = colors.HexColor("#2A9D8F")
         pie.slices[1].fillColor = colors.HexColor("#BFC8D6")
@@ -672,8 +668,6 @@ def create_weekly_pdf_report(
         pie.height = 145
         pie.data = [zone_counts["red"], zone_counts["yellow"], zone_counts["green"]]
         pie.labels = ["", "", ""]
-        pie.fontName = font_regular
-        pie.fontSize = 8
         pie.slices[0].fillColor = colors.HexColor("#E76F51")
         pie.slices[1].fillColor = colors.HexColor("#E9C46A")
         pie.slices[2].fillColor = colors.HexColor("#2A9D8F")
@@ -695,8 +689,6 @@ def create_weekly_pdf_report(
         no_total = max(0, summary["total_days"] * 3 - yes_total)
         pie.data = [yes_total, no_total]
         pie.labels = ["", ""]
-        pie.fontName = font_regular
-        pie.fontSize = 8
         pie.slices[0].fillColor = colors.HexColor("#2A9D8F")
         pie.slices[1].fillColor = colors.HexColor("#BFC8D6")
         draw.add(pie)
