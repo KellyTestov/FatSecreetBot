@@ -87,6 +87,25 @@ def load_tokens() -> tuple[str | None, str | None]:
         logger.info(f"FatSecret: токены загружены из {token_file}")
         return access_token, access_secret
 
+    # Fallback для облака: восстановление из env, если файлов ещё нет.
+    if config.FATSECRET_ACCESS_TOKEN and config.FATSECRET_ACCESS_TOKEN_SECRET:
+        access_token = config.FATSECRET_ACCESS_TOKEN.strip()
+        access_secret = config.FATSECRET_ACCESS_TOKEN_SECRET.strip()
+        if access_token and access_secret:
+            try:
+                _write_tokens_to(config.TOKENS_FILE, access_token, access_secret)
+                logger.info(
+                    "FatSecret: токены восстановлены из env и сохранены в %s",
+                    config.TOKENS_FILE,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "FatSecret: токены из env получены, но не удалось сохранить в файл %s: %s",
+                    config.TOKENS_FILE,
+                    exc,
+                )
+            return access_token, access_secret
+
     logger.info("FatSecret: файл токенов не найден")
     return None, None
 

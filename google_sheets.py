@@ -1,5 +1,6 @@
 import logging
 import json
+import threading
 from datetime import date, datetime, timezone
 
 from google.oauth2.service_account import Credentials
@@ -11,6 +12,7 @@ import config
 logger = logging.getLogger(__name__)
 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
+_STATUS_WRITE_LOCK = threading.Lock()
 
 
 class GoogleSheetsConfigError(RuntimeError):
@@ -559,57 +561,58 @@ def _format_status_row(row_index: int):
 
 
 def upsert_status_row(target_date: date, updates: dict[str, str]) -> dict:
-    spreadsheet_id = _status_spreadsheet_id()
-    ensure_status_sheet()
-    row_index = _status_row_index(target_date)
-    is_new_row = row_index == 0
+    with _STATUS_WRITE_LOCK:
+        spreadsheet_id = _status_spreadsheet_id()
+        ensure_status_sheet()
+        row_index = _status_row_index(target_date)
+        is_new_row = row_index == 0
 
-    if is_new_row:
-        row_index = len(_status_values()) + 1
-        row_values = _status_default_row(target_date)
-        _format_status_row(row_index)
-    else:
-        row_values = _status_row_values(row_index, target_date)
+        if is_new_row:
+            row_index = len(_status_values()) + 1
+            row_values = _status_default_row(target_date)
+            _format_status_row(row_index)
+        else:
+            row_values = _status_row_values(row_index, target_date)
 
-    logger.info(
-        "Google Sheets: обновляю лист Status за %s (строка %s, новая=%s, поля=%s)",
-        target_date.strftime("%d.%m.%Y"),
-        row_index,
-        "да" if is_new_row else "нет",
-        ", ".join(updates.keys()),
-    )
-
-    header_map = _header_index_map()
-    for header, value in updates.items():
-        if header not in header_map:
-            raise RuntimeError(f"Неизвестная колонка Status: {header}")
-        row_values[header_map[header]] = value
-
-    try:
-        result = (
-            _service()
-            .spreadsheets()
-            .values()
-            .update(
-                spreadsheetId=spreadsheet_id,
-                range=_sheet_range(config.STATUS_WORKSHEET, f"A{row_index}:L{row_index}"),
-                valueInputOption="RAW",
-                body={"values": [row_values]},
-            )
-            .execute()
-        )
         logger.info(
-            "Google Sheets: строка Status за %s сохранена (%s)",
+            "Google Sheets: обновляю лист Status за %s (строка %s, новая=%s, поля=%s)",
             target_date.strftime("%d.%m.%Y"),
-            result.get("updatedRange"),
+            row_index,
+            "да" if is_new_row else "нет",
+            ", ".join(updates.keys()),
         )
-        return result
-    except HttpError as exc:
-        _raise_friendly_http_error(exc)
+
+        header_map = _header_index_map()
+        for header, value in updates.items():
+            if header not in header_map:
+                raise RuntimeError(f"Неизвестная колонка Status: {header}")
+            row_values[header_map[header]] = value
+
+        try:
+            result = (
+                _service()
+                .spreadsheets()
+                .values()
+                .update(
+                    spreadsheetId=spreadsheet_id,
+                    range=_sheet_range(config.STATUS_WORKSHEET, f"A{row_index}:L{row_index}"),
+                    valueInputOption="RAW",
+                    body={"values": [row_values]},
+                )
+                .execute()
+            )
+            logger.info(
+                "Google Sheets: строка Status за %s сохранена (%s)",
+                target_date.strftime("%d.%m.%Y"),
+                result.get("updatedRange"),
+            )
+            return result
+        except HttpError as exc:
+            _raise_friendly_http_error(exc)
 
 
 def record_daily_status(target_date: date, totals: dict) -> dict:
-    return upsert_status_row(
+    result = upsert_status_row(
         target_date,
         {
             "Дата": target_date.strftime("%d.%m"),
@@ -620,6 +623,55 @@ def record_daily_status(target_date: date, totals: dict) -> dict:
             "Жиры (г)": f"{totals.get('fat', 0):.2f}",
         },
     )
+    # Валидация после записи: иногда UI-таблица может "съесть" часть обновления.
+    # Если числовые поля не появились, делаем точечный повтор по C:G.
+    row = get_status_rows_between(target_date, target_date)
+    row = row[0] if row else {}
+    nutrition_headers = ["Калории", "Белок (г)", "Углеводы (г)", "Клетчатка (г)", "Жиры (г)"]
+    missing = [h for h in nutrition_headers if not str(row.get(h, "")).strip()]
+    if missing:
+        logger.warning(
+            "Google Sheets: после sync за %s не заполнены поля: %s. Повторяю точечную запись C:G.",
+            target_date.strftime("%d.%m.%Y"),
+            ", ".join(missing),
+        )
+        _force_update_daily_nutrition_cells(target_date, totals)
+    return result
+
+
+def _force_update_daily_nutrition_cells(target_date: date, totals: dict) -> dict:
+    row_index = _status_row_index(target_date)
+    if row_index == 0:
+        raise RuntimeError(f"Строка Status за {target_date.strftime('%d.%m.%Y')} не найдена для повторной записи")
+
+    payload = [[
+        f"{totals.get('calories', 0):.0f}",
+        f"{totals.get('protein', 0):.2f}",
+        f"{totals.get('carbs', 0):.2f}",
+        f"{totals.get('fiber', 0):.2f}",
+        f"{totals.get('fat', 0):.2f}",
+    ]]
+    try:
+        result = (
+            _service()
+            .spreadsheets()
+            .values()
+            .update(
+                spreadsheetId=_status_spreadsheet_id(),
+                range=_sheet_range(config.STATUS_WORKSHEET, f"C{row_index}:G{row_index}"),
+                valueInputOption="RAW",
+                body={"values": payload},
+            )
+            .execute()
+        )
+        logger.info(
+            "Google Sheets: точечная запись C:G выполнена за %s (%s)",
+            target_date.strftime("%d.%m.%Y"),
+            result.get("updatedRange"),
+        )
+        return result
+    except HttpError as exc:
+        _raise_friendly_http_error(exc)
 
 
 def record_appetite(target_date: date, text: str) -> dict:

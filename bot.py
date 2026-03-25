@@ -39,7 +39,7 @@ from handlers import (
     cmd_compare,
     cmd_top_products,
     cmd_settings, cmd_set_start_date,
-    cmd_sheets_test,
+    cmd_sheets_test, cmd_diag_storage,
     cmd_export_excel, cmd_export_pdf,
     cmd_menu, cmd_main_menu, cmd_dev_menu, cmd_hide_keyboard, handle_menu_button,
 )
@@ -68,6 +68,7 @@ async def _post_init(app: Application):
                 BotCommand("main_menu", "Основные кнопки"),
                 BotCommand("dev_menu", "Команды разработчика"),
                 BotCommand("sheets_test", "Проверить Google Sheets"),
+                BotCommand("diag_storage", "Диагностика storage/env"),
                 BotCommand("test_status_sync", "Тест записи Status"),
                 BotCommand("test_weekly_pdf", "Выбрать неделю и получить weekly PDF"),
                 BotCommand("color_status_zones", "Покрасить старые зоны"),
@@ -145,6 +146,7 @@ def main():
     app.add_handler(CommandHandler("settings", cmd_settings))
     app.add_handler(CommandHandler("set_start_date", cmd_set_start_date))
     app.add_handler(CommandHandler("sheets_test", cmd_sheets_test))
+    app.add_handler(CommandHandler("diag_storage", cmd_diag_storage))
     app.add_handler(CommandHandler("export_excel", cmd_export_excel))
     app.add_handler(CommandHandler("export_pdf", cmd_export_pdf))
     status_automation.register_automation_handlers(app)

@@ -154,6 +154,15 @@ def _fetch_day_totals(target_date: date) -> dict:
 async def sync_status_for_day(target_date: date) -> dict:
     logger.info(f"Синхронизация Status: начинаю сбор итогов за {target_date.strftime('%d.%m.%Y')}")
     totals = await asyncio.to_thread(_fetch_day_totals, target_date)
+    logger.info(
+        "Синхронизация Status: итоги за %s получены (ккал=%s, белок=%s, углеводы=%s, клетчатка=%s, жиры=%s)",
+        target_date.strftime("%d.%m.%Y"),
+        f"{totals.get('calories', 0):.0f}",
+        f"{totals.get('protein', 0):.2f}",
+        f"{totals.get('carbs', 0):.2f}",
+        f"{totals.get('fiber', 0):.2f}",
+        f"{totals.get('fat', 0):.2f}",
+    )
     result = await asyncio.to_thread(google_sheets.record_daily_status, target_date, totals)
     logger.info(
         "Синхронизация Status: данные за %s сохранены (ккал=%s, белок=%s, углеводы=%s, клетчатка=%s, жиры=%s)",
@@ -826,7 +835,7 @@ def schedule_automation_jobs(app):
     )
     app.job_queue.run_daily(
         job_weekly_pdf_report,
-        time=time(hour=9, minute=0, tzinfo=config.BOT_TIMEZONE),
+        time=time(hour=10, minute=0, tzinfo=config.BOT_TIMEZONE),
         name="status_weekly_pdf",
     )
     app.job_queue.run_daily(
@@ -834,4 +843,4 @@ def schedule_automation_jobs(app):
         time=time(hour=19, minute=0, tzinfo=config.BOT_TIMEZONE),
         name="status_tirz_prompt",
     )
-    logger.info("Автоматизация: расписание задач зарегистрировано (00:00 аппетит, 05:00 sync, 05:01 зоны, 09:30 вес, 19:00 Тирзетта)")
+    logger.info("Автоматизация: расписание задач зарегистрировано (00:00 аппетит, 05:00 sync, 05:01 зоны, 09:30 вес, 10:00 weekly PDF, 19:00 Тирзетта)")

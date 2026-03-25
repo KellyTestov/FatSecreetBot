@@ -55,6 +55,12 @@ AUTOMATION_STATE_FILE = DATA_DIR / "automation_state.json"
 BOT_TIMEZONE_NAME = os.getenv("BOT_TIMEZONE", "Europe/Moscow")
 BOT_TIMEZONE = ZoneInfo(BOT_TIMEZONE_NAME)
 
+# --- Optional runtime fallbacks for cloud deployments ---
+# If file storage is reset, these allow auto-restore without re-auth.
+FATSECRET_ACCESS_TOKEN = os.getenv("FATSECRET_ACCESS_TOKEN")
+FATSECRET_ACCESS_TOKEN_SECRET = os.getenv("FATSECRET_ACCESS_TOKEN_SECRET")
+DEFAULT_START_DATE = os.getenv("DEFAULT_START_DATE")
+
 
 def ensure_storage_dirs():
     """Гарантирует наличие директорий для runtime-файлов."""
@@ -110,6 +116,9 @@ def load_settings() -> dict:
             continue
 
     if data is None:
+        if DEFAULT_START_DATE:
+            default["start_date"] = DEFAULT_START_DATE
+            save_settings(default)
         return default
 
     # Гарантируем наличие всех ключей
@@ -120,6 +129,11 @@ def load_settings() -> dict:
 
     # Миграция в основной путь хранения.
     if used_path and used_path.resolve() != SETTINGS_FILE.resolve():
+        save_settings(data)
+
+    # Автозаполнение start_date из env (только если в файле ещё не задано).
+    if not data.get("start_date") and DEFAULT_START_DATE:
+        data["start_date"] = DEFAULT_START_DATE
         save_settings(data)
 
     return data

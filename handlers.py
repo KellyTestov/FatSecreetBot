@@ -3,7 +3,9 @@
 """
 import asyncio
 import logging
+import json
 from datetime import date, datetime, timedelta
+from pathlib import Path
 
 from telegram import KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
 from telegram.constants import ParseMode
@@ -49,6 +51,7 @@ BTN_TEST_TRAINING = "Тест тренировки"
 BTN_TEST_POOL = "Тест бассейна"
 BTN_COLOR_ZONES = "Покрасить старые зоны"
 BTN_TEST_WEEKLY_PDF = "Тест weekly PDF"
+BTN_DIAG_STORAGE = "Диагностика storage"
 
 
 def _root_keyboard() -> ReplyKeyboardMarkup:
@@ -107,7 +110,7 @@ def _dev_keyboard() -> ReplyKeyboardMarkup:
             [KeyboardButton(BTN_TEST_APPETITE), KeyboardButton(BTN_TEST_WEIGHT)],
             [KeyboardButton(BTN_TEST_TIRZ), KeyboardButton(BTN_TEST_TRAINING)],
             [KeyboardButton(BTN_TEST_POOL), KeyboardButton(BTN_COLOR_ZONES)],
-            [KeyboardButton(BTN_TEST_WEEKLY_PDF)],
+            [KeyboardButton(BTN_TEST_WEEKLY_PDF), KeyboardButton(BTN_DIAG_STORAGE)],
             [KeyboardButton(BTN_BACK)],
         ],
         resize_keyboard=True,
@@ -142,6 +145,7 @@ def _dev_section_text() -> str:
         f"• <b>{BTN_TEST_STATUS_SYNC}</b> — тест записи статуса за вчера\n"
         f"• <b>{BTN_TEST_WEEKLY_PDF}</b> — выбор недели и генерация weekly PDF\n"
         f"• <b>{BTN_COLOR_ZONES}</b> — ретро-окраска старых строк Status\n"
+        f"• <b>{BTN_DIAG_STORAGE}</b> — диагностика путей/файлов storage на сервере\n"
         f"• Остальные кнопки — тесты ежедневных и еженедельных автоматизаций"
     )
 
@@ -359,6 +363,7 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• /export_excel start end, /export_pdf start end — экспорт\n\n"
         "<b>Команды разработчика:</b>\n"
         "• /sheets_test — проверка Google Sheets\n"
+        "• /diag_storage — диагностика файлов и env fallback\n"
         "• /test_status_sync [дата]\n"
         "• /test_weekly_pdf\n"
         "• /color_status_zones [дата] [дата]\n"
@@ -858,6 +863,106 @@ async def cmd_sheets_test(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"Google Sheets: ручная проверка успешно завершена для {_who(update)}")
 
 
+def _fmt_path_status(path: Path) -> str:
+    exists = path.exists()
+    if exists and path.is_file():
+        try:
+            size = path.stat().st_size
+            return f"{path} (ok, {size} bytes)"
+        except OSError:
+            return f"{path} (ok)"
+    return f"{path} (missing)"
+
+
+def _find_first_valid_token_file(candidates: list[Path]) -> Path | None:
+    for p in candidates:
+        if not p.exists() or not p.is_file():
+            continue
+        try:
+            with open(p, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if data.get("access_token") and data.get("access_token_secret"):
+                return p
+        except Exception:
+            continue
+    return None
+
+
+def _find_first_valid_settings_file(candidates: list[Path]) -> Path | None:
+    for p in candidates:
+        if not p.exists() or not p.is_file():
+            continue
+        try:
+            with open(p, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                return p
+        except Exception:
+            continue
+    return None
+
+
+async def cmd_diag_storage(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not check_access(update):
+        return
+
+    _log_user_event(update, "/diag_storage")
+
+    token_candidates = [
+        config.TOKENS_FILE,
+        config.STORAGE_DIR / "tokens.json",
+        config.DATA_DIR / "tokens.json",
+        Path("tokens.json"),
+        Path("data") / "tokens.json",
+    ]
+    settings_candidates = [
+        config.SETTINGS_FILE,
+        config.STORAGE_DIR / "settings.json",
+        Path("settings.json"),
+        Path("data") / "settings.json",
+    ]
+    state_candidates = [
+        config.AUTOMATION_STATE_FILE,
+        config.STORAGE_DIR / "automation_state.json",
+        Path("automation_state.json"),
+        Path("data") / "automation_state.json",
+    ]
+
+    token, secret = fatsecret.load_tokens()
+    settings = config.load_settings()
+    token_file = _find_first_valid_token_file(token_candidates)
+    settings_file = _find_first_valid_settings_file(settings_candidates)
+    state_file = _find_first_valid_settings_file(state_candidates)
+
+    token_env_ok = bool(config.FATSECRET_ACCESS_TOKEN and config.FATSECRET_ACCESS_TOKEN_SECRET)
+    start_date_env = config.DEFAULT_START_DATE or "-"
+
+    text = (
+        "<b>Диагностика Storage</b>\n\n"
+        f"STORAGE_DIR: <code>{config.STORAGE_DIR}</code>\n"
+        f"DATA_DIR: <code>{config.DATA_DIR}</code>\n"
+        f"EXPORTS_DIR: <code>{config.EXPORTS_DIR}</code>\n"
+        f"TZ: <code>{config.BOT_TIMEZONE_NAME}</code>\n\n"
+        "<b>Ключевые файлы</b>\n"
+        f"• TOKENS_FILE: <code>{_fmt_path_status(config.TOKENS_FILE)}</code>\n"
+        f"• SETTINGS_FILE: <code>{_fmt_path_status(config.SETTINGS_FILE)}</code>\n"
+        f"• AUTOMATION_STATE_FILE: <code>{_fmt_path_status(config.AUTOMATION_STATE_FILE)}</code>\n\n"
+        "<b>Что реально найдено</b>\n"
+        f"• Токены FatSecret: {'ok' if token and secret else 'missing'}"
+        f"{'' if not token_file else f' (из {token_file})'}\n"
+        f"• Настройки: {'ok' if settings else 'missing'}"
+        f"{'' if not settings_file else f' (из {settings_file})'}\n"
+        f"• Состояние автоматизации: {'ok' if state_file else 'missing'}"
+        f"{'' if not state_file else f' (из {state_file})'}\n"
+        f"• start_date (runtime): <code>{settings.get('start_date') or '-'}</code>\n\n"
+        "<b>Env fallback</b>\n"
+        f"• FATSECRET_ACCESS_TOKEN + SECRET: {'set' if token_env_ok else 'not set'}\n"
+        f"• DEFAULT_START_DATE: <code>{start_date_env}</code>"
+    )
+
+    await update.message.reply_text(text, parse_mode=ParseMode.HTML)
+
+
 # ============================================================
 # Экспорт
 # ============================================================
@@ -1006,6 +1111,7 @@ async def handle_menu_button(update: Update, context: ContextTypes.DEFAULT_TYPE)
         BTN_TOP_PRODUCTS: cmd_top_products,
         BTN_SETTINGS: cmd_settings,
         BTN_SHEETS_TEST: cmd_sheets_test,
+        BTN_DIAG_STORAGE: cmd_diag_storage,
         BTN_TEST_STATUS_SYNC: cmd_test_status_sync,
         BTN_TEST_APPETITE: cmd_test_appetite_prompt,
         BTN_TEST_WEIGHT: cmd_test_weight_prompt,

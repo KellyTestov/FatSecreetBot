@@ -477,6 +477,7 @@ def create_weekly_pdf_report(
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.lib.units import cm
     from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    from xml.sax.saxutils import escape as xml_escape
 
     font_regular, font_bold = _register_cyrillic_font()
     exports_dir = _ensure_exports_dir()
@@ -491,9 +492,10 @@ def create_weekly_pdf_report(
         topMargin=1.4 * cm,
         bottomMargin=1.4 * cm,
     )
-    style_title = ParagraphStyle("title", fontName=font_bold, fontSize=15, alignment=TA_CENTER, spaceAfter=8)
+    style_title = ParagraphStyle("title", fontName=font_bold, fontSize=15, alignment=TA_CENTER, spaceAfter=12)
     style_h2 = ParagraphStyle("h2", fontName=font_bold, fontSize=11, spaceBefore=8, spaceAfter=4)
     style_p = ParagraphStyle("p", fontName=font_regular, fontSize=9, alignment=TA_LEFT, leading=12, spaceAfter=3)
+    style_cell = ParagraphStyle("cell", fontName=font_regular, fontSize=7.4, leading=9, alignment=TA_LEFT)
 
     header_bg = colors.HexColor("#264653")
     row_alt = colors.HexColor("#F3F6FA")
@@ -611,7 +613,7 @@ def create_weekly_pdf_report(
         chart.bars[1].fillColor = colors.HexColor("#457B9D")
         chart.bars[2].fillColor = colors.HexColor("#E9C46A")
         draw.add(chart)
-        draw.add(String(8, 172, "Макросы по дням (г)", fontName=font_bold, fontSize=10))
+        draw.add(String(8, 172, "БЖУ по дням", fontName=font_bold, fontSize=10))
         draw.add(String(350, 172, "Белок", fontName=font_regular, fontSize=8, fillColor=colors.HexColor("#1D3557")))
         draw.add(String(390, 172, "Углеводы", fontName=font_regular, fontSize=8, fillColor=colors.HexColor("#457B9D")))
         draw.add(String(455, 172, "Жиры", fontName=font_regular, fontSize=8, fillColor=colors.HexColor("#E9C46A")))
@@ -625,11 +627,19 @@ def create_weekly_pdf_report(
         pie.width = 145
         pie.height = 145
         pie.data = [zone_counts["red"], zone_counts["yellow"], zone_counts["green"]]
+        pie.labels = ["", "", ""]
+        pie.fontName = font_regular
+        pie.fontSize = 8
         pie.labels = [f"Красн. {zone_counts['red']}", f"Жёлт. {zone_counts['yellow']}", f"Зел. {zone_counts['green']}"]
         pie.slices[0].fillColor = colors.HexColor("#E76F51")
         pie.slices[1].fillColor = colors.HexColor("#E9C46A")
         pie.slices[2].fillColor = colors.HexColor("#2A9D8F")
         draw.add(pie)
+        draw.add(String(5, 6, f"Сделано: {yes_total}", fontName=font_regular, fontSize=8, fillColor=colors.HexColor("#2A9D8F")))
+        draw.add(String(88, 6, f"Пропуск: {no_total}", fontName=font_regular, fontSize=8, fillColor=colors.HexColor("#6C7A89")))
+        draw.add(String(5, 6, f"Красная: {zone_counts['red']}", fontName=font_regular, fontSize=8, fillColor=colors.HexColor("#E76F51")))
+        draw.add(String(78, 6, f"Жёлтая: {zone_counts['yellow']}", fontName=font_regular, fontSize=8, fillColor=colors.HexColor("#E9C46A")))
+        draw.add(String(152, 6, f"Зелёная: {zone_counts['green']}", fontName=font_regular, fontSize=8, fillColor=colors.HexColor("#2A9D8F")))
         draw.add(String(5, 166, "Зоны нутриентов", fontName=font_bold, fontSize=10))
         return draw
 
@@ -643,11 +653,56 @@ def create_weekly_pdf_report(
         yes_total = sum(activity_yes.values())
         no_total = max(0, summary["total_days"] * 3 - yes_total)
         pie.data = [yes_total, no_total]
+        pie.labels = ["", ""]
+        pie.fontName = font_regular
+        pie.fontSize = 8
         pie.labels = [f"Сделано {yes_total}", f"Пропуск {no_total}"]
         pie.slices[0].fillColor = colors.HexColor("#2A9D8F")
         pie.slices[1].fillColor = colors.HexColor("#BFC8D6")
         draw.add(pie)
         draw.add(String(5, 166, "Активность (зал/кардио/бассейн)", fontName=font_bold, fontSize=9))
+        return draw
+
+    def pie_zones_safe() -> Drawing:
+        draw = Drawing(250, 180)
+        pie = Pie()
+        pie.x = 45
+        pie.y = 15
+        pie.width = 145
+        pie.height = 145
+        pie.data = [zone_counts["red"], zone_counts["yellow"], zone_counts["green"]]
+        pie.labels = ["", "", ""]
+        pie.fontName = font_regular
+        pie.fontSize = 8
+        pie.slices[0].fillColor = colors.HexColor("#E76F51")
+        pie.slices[1].fillColor = colors.HexColor("#E9C46A")
+        pie.slices[2].fillColor = colors.HexColor("#2A9D8F")
+        draw.add(pie)
+        draw.add(String(5, 166, "Зоны нутриентов", fontName=font_bold, fontSize=10))
+        draw.add(String(5, 6, f"Красная: {zone_counts['red']}", fontName=font_regular, fontSize=8, fillColor=colors.HexColor("#E76F51")))
+        draw.add(String(78, 6, f"Жёлтая: {zone_counts['yellow']}", fontName=font_regular, fontSize=8, fillColor=colors.HexColor("#E9C46A")))
+        draw.add(String(152, 6, f"Зелёная: {zone_counts['green']}", fontName=font_regular, fontSize=8, fillColor=colors.HexColor("#2A9D8F")))
+        return draw
+
+    def pie_activity_safe() -> Drawing:
+        draw = Drawing(250, 180)
+        pie = Pie()
+        pie.x = 45
+        pie.y = 15
+        pie.width = 145
+        pie.height = 145
+        yes_total = sum(activity_yes.values())
+        no_total = max(0, summary["total_days"] * 3 - yes_total)
+        pie.data = [yes_total, no_total]
+        pie.labels = ["", ""]
+        pie.fontName = font_regular
+        pie.fontSize = 8
+        pie.slices[0].fillColor = colors.HexColor("#2A9D8F")
+        pie.slices[1].fillColor = colors.HexColor("#BFC8D6")
+        draw.add(pie)
+        draw.add(String(5, 166, "Активность (зал/кардио/бассейн)", fontName=font_bold, fontSize=8))
+        draw.add(String(5, 6, f"Сделано: {yes_total}", fontName=font_regular, fontSize=8, fillColor=colors.HexColor("#2A9D8F")))
+        draw.add(String(88, 6, f"Пропуск: {no_total}", fontName=font_regular, fontSize=8, fillColor=colors.HexColor("#6C7A89")))
         return draw
 
     def line_weight() -> Drawing:
@@ -720,7 +775,7 @@ def create_weekly_pdf_report(
     story.append(Spacer(1, 0.2 * cm))
     story.append(line_weight())
     story.append(Spacer(1, 0.1 * cm))
-    story.append(Table([[pie_zones(), pie_activity()]], colWidths=[8.2 * cm, 8.2 * cm]))
+    story.append(Table([[pie_zones_safe(), pie_activity_safe()]], colWidths=[8.2 * cm, 8.2 * cm]))
 
     if summary["daily_totals"]:
         story.append(Paragraph("Дневная таблица", style_h2))
@@ -738,22 +793,25 @@ def create_weekly_pdf_report(
                     f"{t['fiber']:.1f}",
                     f"{t['fat']:.1f}",
                     row.get("Вес (кг)", ""),
-                    (row.get("Аппетит / ощущения", "") or "")[:28],
+                    (row.get("Аппетит / ощущения", "") or "")[:16],
                     row.get("Тирзетта", ""),
                     row.get("Зал", ""),
                     row.get("Кардио", ""),
                     row.get("Бассейн", ""),
                 ]
             )
-        story.append(make_table(daily_data, col_widths=[1.7 * cm, 1.2 * cm, 1.1 * cm, 1.1 * cm, 1.1 * cm, 1.1 * cm, 1.1 * cm, 3 * cm, 1.5 * cm, 0.8 * cm, 0.9 * cm, 1.1 * cm]))
+        story.append(make_table(daily_data, col_widths=[1.5 * cm, 1.0 * cm, 1.0 * cm, 1.0 * cm, 1.0 * cm, 1.0 * cm, 1.0 * cm, 4.3 * cm, 2.0 * cm, 0.7 * cm, 1.1 * cm, 1.2 * cm]))
 
-    products = top_products(days_data, n=10, sort_by="calories")
+    products = top_products(days_data, n=10, sort_by="count")
     if products:
         story.append(Paragraph("Топ продуктов недели", style_h2))
         prod_data = [["Продукт", "Раз", "Ккал", "Белок", "Углев.", "Жиры"]]
         for p in products:
             prod_data.append([p["name"][:34], str(p["count"]), f"{p['calories']:.0f}", f"{p['protein']:.1f}", f"{p['carbs']:.1f}", f"{p['fat']:.1f}"])
         story.append(make_table(prod_data, col_widths=[8.4 * cm, 1.2 * cm, 1.5 * cm, 1.5 * cm, 1.5 * cm, 1.5 * cm]))
+
+    doc.build(story)
+    return filepath
 
     recommendations = []
     if avgs["protein"] < 120:
